@@ -1,0 +1,13 @@
+---
+title: "Analyse BDD élèves ENSAI"
+description: "Première analyse sur les promotions 2015 à 2024"
+author: "Christophe Lesieur"
+format: html
+from: markdown+emoji
+---
+
+
+## Quarto 
+
+- [External link to Quarto website](https://quarto.org/){target="_blank"}
+- [R example](doc/r.qmd)
