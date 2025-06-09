@@ -1,0 +1,15 @@
+Package: quartotuto
+Type: website
+Title: Quarto tuto
+Description: Used to declare R dependencies
+Version: 1.0
+Authors@R: c(
+    person("Christophe", "LESIEUR",role = c("aut", "cre"), email = "christophe.lesieur@ensai.fr"))
+URL: https://github.com/chlesieur/analyse_bdd_eleves_ensai
+License: MIT
+Imports:
+    dplyr,
+    ggplot2,
+    leaflet,
+    rmarkdown
+Encoding: UTF-8
