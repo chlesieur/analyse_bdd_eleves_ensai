@@ -1,32 +1,10 @@
----
-title: "Code R pour créer, alimenter et mettre en forme la BDD élève à partir des exports pamplemousse"
-author: "Christophe Lesieur"
-format:
-  html:
-    theme: cosmo        # Thème bootstrap léger
-    toc: true           # Table des matières
-    number-sections: true
----
-
-```{css}
-:root {
-  font-size: 12px;  
-}
-
-body {
-  font-family: "Inter", sans-serif;
-}
-```
-
-
-```{r}
 library(purrr)
 library(dplyr)
 library(stringr)
 library(arrow)
 
 # Répertoire où déposer les exports pamplemousse tels quels
-repertoire <- "export pamplemousse"
+repertoire <- "data/export pamplemousse"
 
 # Lecture automatique des exports pamplemousse
 fichiers_csv <- list.files(path = repertoire, pattern = "*.csv")
@@ -71,64 +49,31 @@ supprimer_egal <- function(x) {
 bdd <- as.data.frame(sapply(bdd, supprimer_egal))
 
 
-```
-
-# Répertoire où déposer les exports pamplemousse tels quels
-repertoire <- "export pamplemousse"
-
-# Lecture automatique des exports pamplemousse
-fichiers_csv <- list.files(path = repertoire, pattern = "*.csv")
-
-# tri les fichiers 
-fichiers_csv_tries <- sort(fichiers_csv)
-
-# Initialise un dataframe bdd
-bdd <- data.frame()
-
-for (fichier in fichiers_csv_tries) {
-  
-  data <- read.csv2(paste0(repertoire,"/",fichier), encoding = "latin1")
-  
-  # Vérifie si les colonnes sont les mêmes que celles de la bdd
-  if (ncol(bdd) > 0 && !identical(names(data), names(bdd))) {
-    stop(paste("Les colonnes du fichier", fichier, "ne correspondent pas aux autres fichiers."))
-  }
-  
-  # Ajoute les données du fichier courant à la bdd
-  bdd <- rbind(bdd, data)
-}
-
-# Vérification de doublons
-any(duplicated(bdd))
-bdd <- unique(bdd)
-any(duplicated(bdd))
-
-# Gestion des problèmes de formats (suppression des =)
-noms_variables <- names(bdd)
-nouveaux_noms <- gsub("^X.", "", noms_variables)
-names(bdd) <- nouveaux_noms
-
-supprimer_egal <- function(x) {
-  if (is.character(x)) {
-    gsub("^=", "", x)
-  } else {
-    x
-  }
-}
-
-bdd <- as.data.frame(sapply(bdd, supprimer_egal))
-
-
-
-
-# Seules les variables de note sont numérisées
-bdd$moyenne_matiere <- gsub(",", ".", bdd$moyenne_matiere)
-bdd$moyenne_matiere <- as.numeric(bdd$moyenne_matiere)
+# Seules les variables de note, coeff et rang sont numérisées
 
 bdd$moyenne_ue <- gsub(",", ".", bdd$moyenne_ue)
 bdd$moyenne_ue <- as.numeric(bdd$moyenne_ue)
 
+bdd$moyenne_matiere <- gsub(",", ".", bdd$moyenne_matiere)
+bdd$moyenne_matiere <- as.numeric(bdd$moyenne_matiere)
+
+bdd$moyenne_generale <- gsub(",", ".", bdd$moyenne_generale)
+bdd$moyenne_generale <- as.numeric(bdd$moyenne_generale)
+
+bdd$total_coeff <- as.numeric(bdd$total_coeff)
+
+bdd$total_ects <- as.numeric(bdd$total_ects)
+
+bdd$rang_matiere <- gsub(",", ".", bdd$rang_matiere)
+bdd$rang_matiere <- as.numeric(bdd$rang_matiere)
+
+bdd$rang_max_matiere <- gsub(",", ".", bdd$rang_max_matiere)
+bdd$rang_max_matiere <- as.numeric(bdd$rang_max_matiere)
+
 bdd$toeic <- as.numeric(bdd$toeic)
+
+bdd <- bdd %>% arrange(desc(annee_courante), voie_lib, nom) %>% 
+  rename(annee=annee_courante)
 
 # Création des variables de travail
 # Choix à discuter
@@ -177,7 +122,7 @@ bdd_2 <- bdd %>%
       substr(voie_lib, 1, 2) == "2A" & grepl("Menu 7", voie_lib, ignore.case = TRUE) ~ "GR",
       substr(voie_lib, 1, 2) == "2A" & grepl("Menu 8", voie_lib, ignore.case = TRUE) ~ "MAR",
       substr(voie_lib, 1, 2) == "2A" & grepl("Menu 9", voie_lib, ignore.case = TRUE) ~ "ERASMUS OUT",
-      substr(voie_lib, 1, 2) == "2A" ~ "Autres",    
+      substr(voie_lib, 1, 2) == "2A" ~ "Autres"    
   ),
     filiere_3A = case_when(
       substr(voie_lib, 1, 2) == "3A" & grepl("Att,Master", voie_lib, ignore.case = TRUE) ~ "MSP",
@@ -211,12 +156,27 @@ bdd_2 <- bdd %>%
     )
   )
 
+# Récupération du travail de Stéphane sur les filières 3A
+
+filieres_stephane_3A <- readxl::read_xlsx("data/bdd_2015_2024 explo.xlsx", sheet = "Filières") %>% 
+  select(matiere, annee, filiere_3Abis)
+filieres_stephane_3A$annee <- substr(filieres_stephane_3A$annee,1,4)
+  
+filieres_stephane_3A <- filieres_stephane_3A %>% 
+  distinct(annee, matiere, .keep_all = TRUE)
+
+bdd_3 <- left_join(bdd_2,filieres_stephane_3A, 
+                   by = c("annee", "matiere"),
+                   keep = FALSE)
+
+table(bdd_3$filiere_3Abis)
+
 # On conserve les variables utiles
-bdd <- as.data.frame(sapply(bdd_2, supprimer_egal)) %>% 
+bdd <- as.data.frame(sapply(bdd_3, supprimer_egal)) %>% 
   select(annee_scolaire, id_etudiant, nom, prenom, sexe, nationalite, id_nationalite, paysnai, etab_origine_formation, concours_origine, concours_annee,
          bac_annee, bac_mention, toeic,
-         annee_ecole, statut_etudiant, voie_entree, specialite_entree, filiere_1A, filiere_2A, filiere_3A,
-         id_type_matiere, cat_matiere, code_matiere, matiere, ue, moyenne_matiere, moyenne_ue, voie_lib)
+         annee_ecole, statut_etudiant, voie_entree, specialite_entree, filiere_1A, filiere_2A, filiere_3A, filiere_3Abis,
+         id_type_matiere, cat_matiere, code_matiere, matiere, ue, moyenne_matiere, moyenne_ue, moyenne_generale, total_coeff, total_ects, rang_matiere, rang_max_matiere, voie_lib)
 
 # Labels pour création d'un dictionnaire
 bdd$annee_scolaire <- structure(bdd$annee_scolaire, label = "Année de scolarité")
@@ -248,9 +208,14 @@ bdd$ue <- structure(bdd$ue, label = "Nom de l'UE de la matière")
 bdd$moyenne_matiere <- structure(bdd$moyenne_matiere, label = "Note moyenne de l'étudiant à la matière")
 bdd$moyenne_ue <- structure(bdd$moyenne_ue, label = "Note moyenne de l'étudiant à l'a matière'UE")
 bdd$voie_lib <- structure(bdd$voie_lib, label = "Libellé long de la voie d'appartenance")
+bdd$rang_matiere <- structure(bdd$voie_lib, label = "Rang dans la matière")
+bdd$rang_max_matiere <- structure(bdd$voie_lib, label = "Rang max dans la matière")
+bdd$moyenne_generale <- structure(bdd$voie_lib, label = "Moyenne générale sur l'année")
+bdd$total_coeff <- structure(bdd$voie_lib, label = "Coefficient de la matière")
+bdd$total_ectcs <- structure(bdd$voie_lib, label = "Crédits ECTS de la matière")
 
 # Export en cvs
-write.csv2(bdd, "bdd/bdd_2010_2024.csv", row.names = FALSE)
+write.csv2(bdd, "data/bdd_2015_2024.csv", row.names = FALSE)
 
-# Export en RDS
-write_parquet(bdd,"bdd/bdd_2010_2024.parquet")
+# Export en parquet
+write_parquet(bdd,"data/bdd_2015_2024.parquet")
