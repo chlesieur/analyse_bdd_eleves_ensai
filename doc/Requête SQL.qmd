@@ -1,425 +1,330 @@
 ---
-title: "Requete SQL Pamplemousse"
+title: "Requête SQL"
+author: "Christophe Lesieur"
+format:
+  html:
+    theme: cosmo        # Thème bootstrap léger
+    toc: true           # Table des matières
+    number-sections: true
 ---
 
----- REQUETE SIMPLE ----
+```{css}
+:root {
+  font-size: 12px;      /* Police relativement petite (modifier ici si besoin) */
+}
 
-SELECT 
-  e.nom,
-  e.prenom,
-  modu.code_module,
-  modu.libelle AS module,  
-  m.code_matiere,
-  m.intitule,
-  m.coefficient,
-  m.credit_ects,
-  moy.moyenne,
-  moy.rang,
-  moy.rang_max,
-  moy.rattrapage,
-  e.id_etudiant,
-  m.id_matiere,
-  modu.id_module
-FROM moyenne moy
-INNER JOIN matiere m ON (m.id_matiere=moy.id_matiere)
-INNER JOIN module modu ON (modu.id_module=m.id_module)
-INNER JOIN etudiant e ON (e.id_etudiant=moy.id_etudiant)
+body {
+  font-family: "Inter", sans-serif; /* Police moderne et lisible */
+}
+```
 
----- REQUETE AMELIOREE (notamment pour avoir les voies et les années) ----
+# Introduction
 
-SELECT 
-aux_voie.voie_lib,
-e.nom,
-e.prenom,
-e.libelle_etat_civil,
-e.id_etudiant,
-mo.libelle AS ue,
-m.intitule AS matiere,
-m.code_matiere AS code_matiere,
-ROUND(moy.moyenne,2) AS moyenne_matiere,
-ROUND(moymo.moyenne,2) AS moyenne_ue,
-e.paysnai,
-e.id_ref_paysnai,
-e.id_nationalite,
-e.libelle_statut_etudiant,
-e.concours_origine,
-e.concours_annee,
-e.etab_origine_formation,
-e.bac_annee,
-e.bac_mention,
-e.certif_anglais_org,
-e.certif_anglais_score,
-e.toeic
-FROM moyenne moy
-LEFT JOIN etudiant e ON (e.id_etudiant=moy.id_etudiant)
-LEFT JOIN matiere m ON (m.id_matiere=moy.id_matiere)
-LEFT JOIN module mo ON (m.id_module=mo.id_module)
-LEFT JOIN moyenne_module moymo ON (moymo.id_module=m.id_module AND moymo.id_etudiant=e.id_etudiant)
+La requête se nomme "Scola - Extraction Notes. Elle fonctione sur toutes les années de 2015-2016 à 2024-2025". Il s'agit de la lancer année par année pour ensuite les compiler avec le programme "Code R.qmd"
+
+# Requête SQL
+
+/* =======================================================================
+   SYNTHÈSE : grain (id_etudiant, id_module, id_matiere)
+   ======================================================================= */
+
+SELECT
+    RIGHT(DATABASE(),4)                     AS annee_courante,
+
+    voie.voie_lib,
+    aide.situation,                         -- libellé(s) de voie(s) “10 juin”
+
+    /* — identité de l’étudiant — */
+    e.nom,
+    e.prenom,
+    e.libelle_etat_civil,
+    e.id_etudiant,
+
+    /* — module / matière — */
+    mo.libelle                              AS ue,
+    m.id_type_matiere,
+    m.intitule                              AS matiere,
+    m.code_matiere,
+    ROUND(moy.moyenne,2)                    AS moyenne_matiere,
+    ROUND(moymo.moyenne,2)                  AS moyenne_ue,
+
+    /* — variables « profil » (requête 1) — */
+    e.paysnai,
+    e.id_ref_paysnai,
+    e.id_nationalite,
+    e.libelle_statut_etudiant,
+    e.concours_origine,
+    e.concours_annee,
+    e.etab_origine_formation,
+    e.bac_annee,
+    e.bac_mention,
+    e.certif_anglais_org,
+    e.certif_anglais_score,
+    e.toeic,
+
+    /* — indicateurs issus de la requête “10 juin” — */
+    aide.date_naissance,
+    aide.sexe,
+    aide.double_diplome,
+    aide.autre_diplome,
+    aide.redoublement,
+    aide.att_ing,
+    aide.bac_spe1,
+    aide.bac_spe2,
+    aide.cpge,
+    aide.bourse,
+    aide.bourse_type,
+    aide.bourse_montant,
+    aide.id_pcs_pere,
+    aide.id_pcs_mere,
+
+    aide.MES1, aide.MHS1, aide.MIS1, aide.MSS1,
+    aide.MES2, aide.MHS2, aide.MIS2, aide.MSS2,
+    aide.MGS1, aide.MGS2,
+    aide.RES1, aide.RHS1, aide.RIS1, aide.RSS1,
+    aide.RES2, aide.RHS2, aide.RIS2, aide.RSS2,
+
+    aide.moyenne_generale,
+    aide.total_coeff,
+    aide.total_ects,
+    aide.rattrapage_max,
+    aide.AV                                      -- année validée (0/1)
+
+FROM moyenne              AS moy
+LEFT JOIN etudiant        AS e     ON e.id_etudiant   = moy.id_etudiant
+LEFT JOIN matiere         AS m     ON m.id_matiere    = moy.id_matiere
+LEFT JOIN module          AS mo    ON mo.id_module    = m.id_module
+LEFT JOIN moyenne_module  AS moymo ON moymo.id_module = m.id_module
+                                   AND moymo.id_etudiant = e.id_etudiant
+
+/* ======================= sous-requête « voies » ======================= */
 LEFT JOIN (
-	SELECT 
-	  ve.id_etudiant, 
-	  GROUP_CONCAT(DISTINCT v.lib ORDER BY v.lib) AS voie_lib
-	FROM voie_etudiant ve
-	INNER JOIN voie v ON (v.id_voie=ve.id_voie)
-	GROUP BY ve.id_etudiant
-) aux_voie ON (aux_voie.id_etudiant=e.id_etudiant)
+    SELECT 
+        ve.id_etudiant,
+        GROUP_CONCAT(DISTINCT v.lib ORDER BY v.lib) AS voie_lib
+    FROM voie_etudiant ve
+    INNER JOIN voie v ON v.id_voie = ve.id_voie
+    GROUP BY ve.id_etudiant
+) AS voie  ON voie.id_etudiant = e.id_etudiant
+
+/* ==================== sous-requête « agrégats annuels » =============== */
+LEFT JOIN (
+    /* -------- sélection agrégée par étudiant (version 10 juin) -------- */
+    SELECT 
+        aide_int.id_etudiant,
+
+        MAX(aide_int.annee)              AS annee,
+        MAX(aide_int.date_naissance)     AS date_naissance,
+        MAX(aide_int.situation)          AS situation,
+        MAX(aide_int.sexe)               AS sexe,
+
+        MAX(aide_int.double_diplome)     AS double_diplome,
+        MAX(aide_int.autre_diplome)      AS autre_diplome,
+        MAX(aide_int.redoublement)       AS redoublement,
+        MAX(aide_int.att_ing)            AS att_ing,
+
+        MAX(aide_int.bac_annee)          AS bac_annee,
+        MAX(aide_int.bac_spe1)           AS bac_spe1,
+        MAX(aide_int.bac_spe2)           AS bac_spe2,
+        MAX(aide_int.bac_mention)        AS bac_mention,
+
+        MAX(aide_int.concours_origine)   AS concours_origine,
+        MAX(aide_int.situation_avant)    AS situation_avant,
+        MAX(aide_int.cpge)               AS cpge,
+
+        MAX(aide_int.bourse)             AS bourse,
+        MAX(aide_int.bourse_type)        AS bourse_type,
+        MAX(aide_int.bourse_montant)     AS bourse_montant,
+        MAX(aide_int.id_pcs_pere)        AS id_pcs_pere,
+        MAX(aide_int.id_pcs_mere)        AS id_pcs_mere,
+
+        /* — moyennes de groupes — */
+        GROUP_CONCAT(DISTINCT IF(aide_int.groupe_cat_note='MES1',ROUND(aide_int.groupe_moyenne,2),NULL)) AS MES1,
+        GROUP_CONCAT(DISTINCT IF(aide_int.groupe_cat_note='MHS1',ROUND(aide_int.groupe_moyenne,2),NULL)) AS MHS1,
+        GROUP_CONCAT(DISTINCT IF(aide_int.groupe_cat_note='MIS1',ROUND(aide_int.groupe_moyenne,2),NULL)) AS MIS1,
+        GROUP_CONCAT(DISTINCT IF(aide_int.groupe_cat_note='MSS1',ROUND(aide_int.groupe_moyenne,2),NULL)) AS MSS1,
+        GROUP_CONCAT(DISTINCT IF(aide_int.groupe_cat_note='MES2',ROUND(aide_int.groupe_moyenne,2),NULL)) AS MES2,
+        GROUP_CONCAT(DISTINCT IF(aide_int.groupe_cat_note='MHS2',ROUND(aide_int.groupe_moyenne,2),NULL)) AS MHS2,
+        GROUP_CONCAT(DISTINCT IF(aide_int.groupe_cat_note='MIS2',ROUND(aide_int.groupe_moyenne,2),NULL)) AS MIS2,
+        GROUP_CONCAT(DISTINCT IF(aide_int.groupe_cat_note='MSS2',ROUND(aide_int.groupe_moyenne,2),NULL)) AS MSS2,
+
+        /* — moyennes semestrielles — */
+        GROUP_CONCAT(DISTINCT IF(aide_int.semestre_cat_note='MGS1',ROUND(aide_int.semestre_moyenne,2),NULL)) AS MGS1,
+        GROUP_CONCAT(DISTINCT IF(aide_int.semestre_cat_note='MGS2',ROUND(aide_int.semestre_moyenne,2),NULL)) AS MGS2,
+
+        /* — rattrapages — */
+        GROUP_CONCAT(DISTINCT IF(aide_int.groupe_cat_ratt='RES1',aide_int.groupe_ratt,NULL)) AS RES1,
+        GROUP_CONCAT(DISTINCT IF(aide_int.groupe_cat_ratt='RHS1',aide_int.groupe_ratt,NULL)) AS RHS1,
+        GROUP_CONCAT(DISTINCT IF(aide_int.groupe_cat_ratt='RIS1',aide_int.groupe_ratt,NULL)) AS RIS1,
+        GROUP_CONCAT(DISTINCT IF(aide_int.groupe_cat_ratt='RSS1',aide_int.groupe_ratt,NULL)) AS RSS1,
+        GROUP_CONCAT(DISTINCT IF(aide_int.groupe_cat_ratt='RES2',aide_int.groupe_ratt,NULL)) AS RES2,
+        GROUP_CONCAT(DISTINCT IF(aide_int.groupe_cat_ratt='RHS2',aide_int.groupe_ratt,NULL)) AS RHS2,
+        GROUP_CONCAT(DISTINCT IF(aide_int.groupe_cat_ratt='RIS2',aide_int.groupe_ratt,NULL)) AS RIS2,
+        GROUP_CONCAT(DISTINCT IF(aide_int.groupe_cat_ratt='RSS2',aide_int.groupe_ratt,NULL)) AS RSS2,
+
+        MAX(aide_int.moyenne_generale)   AS moyenne_generale,
+        MAX(aide_int.total_coeff)        AS total_coeff,
+        MAX(aide_int.total_ects)         AS total_ects,
+        MAX(aide_int.rattrapage_max)     AS rattrapage_max,
+        MAX(aide_int.AV)                 AS AV
+
+    FROM (
+        /* ------------------- bloc interne (version 10 juin) ------------------- */
+        SELECT 
+            e.id_etudiant,
+            DATE_FORMAT(e.datenai,'%d/%m/%Y')                       AS date_naissance,
+            RIGHT(DATABASE(),4)                                     AS annee,
+            CONCAT(e.nom,' ',e.prenom)                              AS nom_complet,
+            CASE
+                WHEN e.libelle_etat_civil IN ('Monsieur','M.') THEN '1'
+                WHEN e.libelle_etat_civil IN ('Madame','Mme','Mademoiselle') THEN '2'
+                ELSE '?'
+            END                                                    AS sexe,
+            GROUP_CONCAT(DISTINCT v.lib ORDER BY v.ordre)           AS situation,
+            e.diplome_double1                                       AS double_diplome,
+            e.diplome_autre1                                        AS autre_diplome,
+            IF(MAX(IFNULL(v.niveau,0)) = MAX(IFNULL(v_avant.niveau,0)),1,0) AS redoublement,
+            IF(GROUP_CONCAT(DISTINCT v.libelle ORDER BY v.ordre) LIKE '%Attaché%','attaché','ingénieur') AS att_ing,
+            e.bac_annee,
+            e.bac_serie                                             AS bac_spe1,
+            NULL                                                    AS bac_spe2,
+            bac_mention.libelle                                     AS bac_mention,
+            e.concours_origine,
+            rsp.libelle                                             AS situation_avant,
+            cpge.libelle                                            AS cpge,
+            IF(IFNULL(e.type_bourse,'')='',0,1)                     AS bourse,
+            e.type_bourse                                           AS bourse_type,
+            e.bourse_montant,
+            e.id_pcs_pere,
+            e.id_pcs_mere,
+
+            /* — résultats de groupe (MESx, …) — */
+            grp.id_periode,
+            grp.cat_note            AS groupe_cat_note,
+            grp.cat_ratt            AS groupe_cat_ratt,
+            grp.moyenne             AS groupe_moyenne,
+            grp.ratt                AS groupe_ratt,
+
+            /* — résultats semestriels — */
+            sem.cat_note            AS semestre_cat_note,
+            sem.moyenne             AS semestre_moyenne,
+
+            /* — moyennes générales annuelles — */
+            moy_gen.moyenne_generale,
+            moy_gen.total_coeff,
+            moy_gen.total_ects,
+            moy_gen.rattrapage_max,
+
+            /* — validation annuelle — */
+            IF(com.commentaire LIKE '%année validée%',1,0)          AS AV
+
+        FROM etudiant e
+        INNER JOIN voie_etudiant ve  ON ve.id_etudiant = e.id_etudiant
+        INNER JOIN voie v            ON v.id_voie      = ve.id_voie
+                                     AND v.cle_voie    = 1
+                                     AND v.voie_option = 0
+
+        LEFT JOIN commentaire com         ON com.id_etudiant = e.id_etudiant
+        LEFT JOIN ref_cpge cpge           ON cpge.id_ref_cpge = e.id_ref_cpge
+        LEFT JOIN ref_bac_mention bac_mention
+                                          ON bac_mention.id_ref_bac_mention = e.id_ref_bac_mention
+        LEFT JOIN ref_situation_pre rsp   ON rsp.id_ref_situation_pre       = e.id_ref_situation_pre
+
+        /* — année N-1 pour détecter redoublement — */
+        LEFT JOIN ensai_2024.voie_etudiant ve_avant
+                                          ON ve_avant.id_etudiant = e.id_etudiant
+        LEFT JOIN ensai_2024.voie v_avant ON v_avant.id_voie      = ve_avant.id_voie
+                                         AND v_avant.cle_voie     = 1
+
+        /* ---- sous-total par groupe (MESx, …) ---- */
+        LEFT JOIN (
+            SELECT 
+                moy.id_etudiant,
+                CONCAT('M',LEFT(rtm.lib,1),'S',modu.id_periode) AS cat_note,
+                CONCAT('R',LEFT(rtm.lib,1),'S',modu.id_periode) AS cat_ratt,
+                modu.id_periode,
+                SUM(moy.moyenne*m.coefficient)/SUM(m.coefficient) AS moyenne,
+                SUM(moy.rattrapage)                           AS ratt
+            FROM matiere m
+            INNER JOIN ref_type_matiere rtm  ON rtm.id_ref_type_matiere = m.id_type_matiere
+            INNER JOIN module           modu ON modu.id_module          = m.id_module
+            INNER JOIN moyenne          moy  ON moy.id_matiere          = m.id_matiere
+            WHERE m.bonus = 0
+            GROUP BY
+                moy.id_etudiant,
+                modu.id_periode,
+                m.id_type_matiere
+        ) AS grp ON grp.id_etudiant = e.id_etudiant
+
+        /* ---- sous-total semestriel ---- */
+        LEFT JOIN (
+            SELECT 
+                CONCAT('MGS',modu.id_periode)                    AS cat_note,
+                modu.id_periode,
+                mmoy.id_etudiant,
+                SUM(mmoy.moyenne*mmoy.coefficient)/SUM(mmoy.coefficient) AS moyenne
+            FROM moyenne_module mmoy
+            INNER JOIN module modu ON modu.id_module = mmoy.id_module
+            WHERE IFNULL(modu.id_periode,0) > 0
+              AND mmoy.moyenne IS NOT NULL
+            GROUP BY
+                modu.id_periode,
+                mmoy.id_etudiant
+        ) AS sem ON sem.id_etudiant = e.id_etudiant
+               AND sem.id_periode  = grp.id_periode
+
+        /* ---- moyenne générale annuelle ---- */
+        LEFT JOIN (
+            SELECT 
+                id_etudiant,
+                ROUND(SUM(moyenne*coefficient)/SUM(coefficient),2) AS moyenne_generale,
+                SUM(coefficient)                                   AS total_coeff,
+                SUM(credit_ects)                                   AS total_ects,
+                MAX(rattrapage)                                    AS rattrapage_max
+            FROM (
+                SELECT 
+                    mm.id_etudiant,
+                    SUM(mm.coefficient*mm.moyenne)/SUM(mm.coefficient)
+                      + IFNULL(bonus.somme_bonus,0)                AS moyenne,
+                    modu.id_periode,
+                    SUM(mm.coefficient)                            AS coefficient,
+                    SUM(mm.credit_ects_valide)                     AS credit_ects,
+                    MAX(mm.rattrapage)                             AS rattrapage
+                FROM moyenne_module mm
+                INNER JOIN module modu ON modu.id_module = mm.id_module
+                LEFT JOIN (
+                    SELECT 
+                        m2.id_etudiant,
+                        m.bonus          AS id_periode,
+                        SUM(m2.note)     AS somme_bonus
+                    FROM moyenne m2
+                    INNER JOIN matiere m ON m.id_matiere = m2.id_matiere
+                    WHERE m.bonus > 0 AND m.id_module = 0
+                    GROUP BY m2.id_etudiant, m.bonus
+                ) AS bonus ON bonus.id_etudiant = mm.id_etudiant
+                          AND modu.id_periode  = bonus.id_periode
+                GROUP BY mm.id_etudiant, modu.id_periode
+            ) AS t
+            GROUP BY id_etudiant
+        ) AS moy_gen ON moy_gen.id_etudiant = e.id_etudiant
+
+        GROUP BY
+            e.id_etudiant,
+            grp.cat_note
+    ) AS aide_int
+
+    GROUP BY aide_int.id_etudiant
+    HAVING MGS1 IS NOT NULL OR MGS2 IS NOT NULL
+) AS aide ON aide.id_etudiant = e.id_etudiant
+
+/* ======================= regroupement final & tri ===================== */
 GROUP BY 
-  e.id_etudiant, 
-  moymo.id_module, 
-  moy.id_matiere
+    e.id_etudiant,
+    m.id_module,
+    m.id_matiere
+
 ORDER BY
-  aux_voie.voie_lib,
-  e.id_etudiant DESC
-
-
----- REQUETE AUGMENTEE (pour avoir les redoublements) -------
-
-SELECT 
-
-  annee,
-  situation,
-  nom,
-  id_etudiant,
-  date_naissance,
-  sexe,
-  double_diplome,
-  autre_diplome,
-  redoublement,
-  att_ing,
-  bac_annee,
-  bac_spe1,
-  bac_spe2,
-  bac_mention,
-  concours_origine,
-  situation_avant,
-  cpge,
-  bourse,
-  bourse_type,
-  bourse_montant,
-  id_pcs_pere,
-  id_pcs_mere,
-
-  GROUP_CONCAT(DISTINCT IF(groupe_cat_note='MES1',ROUND(groupe_moyenne,2),NULL)) AS MES1,
-  GROUP_CONCAT(DISTINCT IF(groupe_cat_note='MHS1',ROUND(groupe_moyenne,2),NULL)) AS MHS1,
-  GROUP_CONCAT(DISTINCT IF(groupe_cat_note='MIS1',ROUND(groupe_moyenne,2),NULL)) AS MIS1,
-  GROUP_CONCAT(DISTINCT IF(groupe_cat_note='MSS1',ROUND(groupe_moyenne,2),NULL)) AS MSS1,
-  GROUP_CONCAT(DISTINCT IF(groupe_cat_note='MES2',ROUND(groupe_moyenne,2),NULL)) AS MES2,
-  GROUP_CONCAT(DISTINCT IF(groupe_cat_note='MHS2',ROUND(groupe_moyenne,2),NULL)) AS MHS2,
-  GROUP_CONCAT(DISTINCT IF(groupe_cat_note='MIS2',ROUND(groupe_moyenne,2),NULL)) AS MIS2,
-  GROUP_CONCAT(DISTINCT IF(groupe_cat_note='MSS2',ROUND(groupe_moyenne,2),NULL)) AS MSS2,
-
-  GROUP_CONCAT(DISTINCT IF(semestre_cat_note='MGS1',ROUND(semestre_moyenne,2),NULL)) AS MGS1,
-  GROUP_CONCAT(DISTINCT IF(semestre_cat_note='MGS2',ROUND(semestre_moyenne,2),NULL)) AS MGS2,
-
-  GROUP_CONCAT(DISTINCT IF(groupe_cat_ratt='RES1',groupe_ratt,NULL)) AS RES1,
-  GROUP_CONCAT(DISTINCT IF(groupe_cat_ratt='RHS1',groupe_ratt,NULL)) AS RHS1,
-  GROUP_CONCAT(DISTINCT IF(groupe_cat_ratt='RIS1',groupe_ratt,NULL)) AS RIS1,
-  GROUP_CONCAT(DISTINCT IF(groupe_cat_ratt='RSS1',groupe_ratt,NULL)) AS RSS1,
-  GROUP_CONCAT(DISTINCT IF(groupe_cat_ratt='RES2',groupe_ratt,NULL)) AS RES2,
-  GROUP_CONCAT(DISTINCT IF(groupe_cat_ratt='RHS2',groupe_ratt,NULL)) AS RHS2,
-  GROUP_CONCAT(DISTINCT IF(groupe_cat_ratt='RIS2',groupe_ratt,NULL)) AS RIS2,
-  GROUP_CONCAT(DISTINCT IF(groupe_cat_ratt='RSS2',groupe_ratt,NULL)) AS RSS2,
-  AV
-FROM (
-SELECT 
-  e.id_etudiant,
-  DATE_FORMAT(e.datenai,'%d/%m/%Y') AS date_naissance,
-  RIGHT(DATABASE(),4) AS annee,
-  CONCAT(nom,' ',prenom) AS nom,
-  CASE
-    WHEN e.libelle_etat_civil IN ('Monsieur','M.') THEN "1"
-    WHEN e.libelle_etat_civil IN ('Madame','Mme','Mademoiselle') THEN "2"
-    ELSE "?"
-  END AS sexe,
-  GROUP_CONCAT(DISTINCT v.lib ORDER BY v.ordre) AS situation,
-  `diplome_double1` AS double_diplome,
-  `diplome_autre1` AS autre_diplome,
-  IF(MAX(IFNULL(v.niveau,0))=MAX(IFNULL(v_avant.niveau,0)),1,0) AS redoublement,
-  IF(GROUP_CONCAT(DISTINCT v.libelle ORDER BY v.ordre) LIKE '%Attaché%','attaché','ingénieur') AS att_ing,
-  bac_annee,
-  bac_serie AS `bac_spe1`,
-  NULL as `bac_spe2`,
-  bac_mention.libelle AS `bac_mention`,-- `id_ref_bac_mention`
-  `concours_origine`,
-  rsp.libelle AS situation_avant,
-  cpge.libelle AS cpge,
-  IF(IFNULL(`type_bourse`,'')='',0,1) AS bourse,
-  `type_bourse` AS bourse_type,
-  `bourse_montant`,
-  `id_pcs_pere`,
-  `id_pcs_mere`,
-  groupe.id_periode,
-  groupe.cat_note AS groupe_cat_note,
-  groupe.cat_ratt AS groupe_cat_ratt,
-  groupe.moyenne AS groupe_moyenne,
-  groupe.ratt AS groupe_ratt,
-  semestre.cat_note AS semestre_cat_note,
-  semestre.moyenne AS semestre_moyenne,
-  IF(com.commentaire LIKE '%année validée%',1,0) AS AV
-FROM etudiant e
-INNER JOIN voie_etudiant ve ON (ve.id_etudiant=e.id_etudiant)
-INNER JOIN voie v ON (v.id_voie=ve.id_voie AND v.cle_voie=1 AND v.voie_option=0)
-LEFT JOIN commentaire com ON (com.id_etudiant=e.id_etudiant)
-LEFT JOIN `ref_cpge` cpge ON (cpge.id_ref_cpge=e.id_ref_cpge)
-LEFT JOIN `ref_bac_mention` bac_mention ON (bac_mention.id_ref_bac_mention=e.id_ref_bac_mention)
-LEFT JOIN `ref_situation_pre` rsp ON (rsp.id_ref_situation_pre=e.id_ref_situation_pre)
-LEFT JOIN ensai_{annee_base_avant}.voie_etudiant ve_avant ON (ve_avant.id_etudiant=e.id_etudiant)
-LEFT JOIN ensai_{annee_base_avant}.voie v_avant ON (v_avant.id_voie=ve_avant.id_voie AND v_avant.cle_voie=1)
-LEFT JOIN (
-SELECT 
-  moy.id_etudiant,
-  CONCAT('M',LEFT(rtm.lib,1),'S',modu.id_periode) AS cat_note,
-  CONCAT('R',LEFT(rtm.lib,1),'S',modu.id_periode) AS cat_ratt,
-  modu.id_periode,
-  SUM(moy.moyenne*m.coefficient)/SUM(m.coefficient) AS moyenne,
-  SUM(moy.rattrapage) AS ratt
-FROM matiere m
-INNER JOIN `ref_type_matiere` rtm ON (rtm.id_ref_type_matiere=m.id_type_matiere)
-INNER JOIN module modu ON (modu.id_module=m.id_module)
-INNER JOIN moyenne moy ON (moy.id_matiere=m.id_matiere)
-WHERE 
-  m.bonus=0
-GROUP BY
-  moy.id_etudiant,
-  modu.id_periode,
-  m.id_type_matiere
-) AS groupe ON (e.id_etudiant=groupe.id_etudiant)
-LEFT JOIN (
-SELECT 
-  CONCAT('MGS',modu.id_periode) AS  cat_note,
-  modu.id_periode,
-  mmoy.id_etudiant,
-  SUM(mmoy.moyenne*mmoy.coefficient)/SUM(mmoy.coefficient) AS moyenne
-FROM `moyenne_module` mmoy
-INNER JOIN module modu ON (modu.id_module=mmoy.id_module)
-WHERE 
-  IFNULL(modu.id_periode,0)>0 AND
-  mmoy.moyenne IS NOT NULL
-GROUP BY
-  modu.id_periode,
-  mmoy.id_etudiant
-) AS semestre ON (
-  e.id_etudiant=semestre.id_etudiant AND 
-  groupe.id_periode=semestre.id_periode
-)
-GROUP BY
-  e.id_etudiant,
-  groupe.cat_note
-) AS aide
-GROUP BY 
-  id_etudiant
-HAVING 
-  MGS1 IS NOT NULL OR
-  MGS2 IS NOT NULL
-ORDER BY
-  situation,
-  nom
-
-
----- REQUETE ENCORE AMELIOREE (+ d'informations) ------
-
-SELECT 
-  annee,
-  situation,
-  nom,
-  id_etudiant,
-  date_naissance,
-  sexe,
-  double_diplome,
-  autre_diplome,
-  redoublement,
-  att_ing,
-  bac_annee,
-  bac_spe1,
-  bac_spe2,
-  bac_mention,
-  concours_origine,
-  situation_avant,
-  cpge,
-  bourse,
-  bourse_type,
-  bourse_montant,
-  id_pcs_pere,
-  id_pcs_mere,
-  paysnai,
-  id_ref_paysnai,
-  id_nationalite,
-  concours_annee,
-  etab_origine_formation,
-  certif_anglais_org,
-  certif_anglais_score,
-  toeic,
-  
-  GROUP_CONCAT(DISTINCT IF(groupe_cat_note='MES1',ROUND(groupe_moyenne,2),NULL)) AS MES1,
-  GROUP_CONCAT(DISTINCT IF(groupe_cat_note='MHS1',ROUND(groupe_moyenne,2),NULL)) AS MHS1,
-  GROUP_CONCAT(DISTINCT IF(groupe_cat_note='MIS1',ROUND(groupe_moyenne,2),NULL)) AS MIS1,
-  GROUP_CONCAT(DISTINCT IF(groupe_cat_note='MSS1',ROUND(groupe_moyenne,2),NULL)) AS MSS1,
-  GROUP_CONCAT(DISTINCT IF(groupe_cat_note='MES2',ROUND(groupe_moyenne,2),NULL)) AS MES2,
-  GROUP_CONCAT(DISTINCT IF(groupe_cat_note='MHS2',ROUND(groupe_moyenne,2),NULL)) AS MHS2,
-  GROUP_CONCAT(DISTINCT IF(groupe_cat_note='MIS2',ROUND(groupe_moyenne,2),NULL)) AS MIS2,
-  GROUP_CONCAT(DISTINCT IF(groupe_cat_note='MSS2',ROUND(groupe_moyenne,2),NULL)) AS MSS2,
-
-  GROUP_CONCAT(DISTINCT IF(semestre_cat_note='MGS1',ROUND(semestre_moyenne,2),NULL)) AS MGS1,
-  GROUP_CONCAT(DISTINCT IF(semestre_cat_note='MGS2',ROUND(semestre_moyenne,2),NULL)) AS MGS2,
-
-  GROUP_CONCAT(DISTINCT IF(groupe_cat_ratt='RES1',groupe_ratt,NULL)) AS RES1,
-  GROUP_CONCAT(DISTINCT IF(groupe_cat_ratt='RHS1',groupe_ratt,NULL)) AS RHS1,
-  GROUP_CONCAT(DISTINCT IF(groupe_cat_ratt='RIS1',groupe_ratt,NULL)) AS RIS1,
-  GROUP_CONCAT(DISTINCT IF(groupe_cat_ratt='RSS1',groupe_ratt,NULL)) AS RSS1,
-  GROUP_CONCAT(DISTINCT IF(groupe_cat_ratt='RES2',groupe_ratt,NULL)) AS RES2,
-  GROUP_CONCAT(DISTINCT IF(groupe_cat_ratt='RHS2',groupe_ratt,NULL)) AS RHS2,
-  GROUP_CONCAT(DISTINCT IF(groupe_cat_ratt='RIS2',groupe_ratt,NULL)) AS RIS2,
-  GROUP_CONCAT(DISTINCT IF(groupe_cat_ratt='RSS2',groupe_ratt,NULL)) AS RSS2,
-  AV
-FROM (
-SELECT 
-  e.id_etudiant,
-  DATE_FORMAT(e.datenai,'%d/%m/%Y') AS date_naissance,
-  RIGHT(DATABASE(),4) AS annee,
-  CONCAT(nom,' ',prenom) AS nom,
-  CASE
-    WHEN e.libelle_etat_civil IN ('Monsieur','M.') THEN "1"
-    WHEN e.libelle_etat_civil IN ('Madame','Mme','Mademoiselle') THEN "2"
-    ELSE "?"
-  END AS sexe,
-  GROUP_CONCAT(DISTINCT v.lib ORDER BY v.ordre) AS situation,
-  `diplome_double1` AS double_diplome,
-  `diplome_autre1` AS autre_diplome,
-  IF(MAX(IFNULL(v.niveau,0))=MAX(IFNULL(v_avant.niveau,0)),1,0) AS redoublement,
-  IF(GROUP_CONCAT(DISTINCT v.libelle ORDER BY v.ordre) LIKE '%Attaché%','attaché','ingénieur') AS att_ing,
-  bac_annee,
-  bac_serie AS `bac_spe1`,
-  NULL as `bac_spe2`,
-  bac_mention.libelle AS `bac_mention`,-- `id_ref_bac_mention`
-  `concours_origine`,
-  rsp.libelle AS situation_avant,
-  cpge.libelle AS cpge,
-  IF(IFNULL(`type_bourse`,'')='',0,1) AS bourse,
-  `type_bourse` AS bourse_type,
-  `bourse_montant`,
-  `id_pcs_pere`,
-  `id_pcs_mere`,
-  groupe.id_periode,
-  groupe.cat_note AS groupe_cat_note,
-  groupe.cat_ratt AS groupe_cat_ratt,
-  groupe.moyenne AS groupe_moyenne,
-  groupe.ratt AS groupe_ratt,
-  semestre.cat_note AS semestre_cat_note,
-  semestre.moyenne AS semestre_moyenne,
-  IF(com.commentaire LIKE '%année validée%',1,0) AS AV,
-  e.paysnai,
-  e.id_ref_paysnai,
-  e.id_nationalite,
-  e.concours_annee,
-  e.etab_origine_formation,
-  e.certif_anglais_org,
-  e.certif_anglais_score,
-  e.toeic
-
-FROM etudiant e
-INNER JOIN voie_etudiant ve ON (ve.id_etudiant=e.id_etudiant)
-INNER JOIN voie v ON (v.id_voie=ve.id_voie AND v.cle_voie=1 AND v.voie_option=0)
-LEFT JOIN commentaire com ON (com.id_etudiant=e.id_etudiant)
-LEFT JOIN `ref_cpge` cpge ON (cpge.id_ref_cpge=e.id_ref_cpge)
-LEFT JOIN `ref_bac_mention` bac_mention ON (bac_mention.id_ref_bac_mention=e.id_ref_bac_mention)
-LEFT JOIN `ref_situation_pre` rsp ON (rsp.id_ref_situation_pre=e.id_ref_situation_pre)
-LEFT JOIN ensai_{annee_base_avant}.voie_etudiant ve_avant ON (ve_avant.id_etudiant=e.id_etudiant)
-LEFT JOIN ensai_{annee_base_avant}.voie v_avant ON (v_avant.id_voie=ve_avant.id_voie AND v_avant.cle_voie=1)
-LEFT JOIN (
-SELECT 
-  moy.id_etudiant,
-  CONCAT('M',LEFT(rtm.lib,1),'S',modu.id_periode) AS cat_note,
-  CONCAT('R',LEFT(rtm.lib,1),'S',modu.id_periode) AS cat_ratt,
-  modu.id_periode,
-  SUM(moy.moyenne*m.coefficient)/SUM(m.coefficient) AS moyenne,
-  SUM(moy.rattrapage) AS ratt
-FROM matiere m
-INNER JOIN `ref_type_matiere` rtm ON (rtm.id_ref_type_matiere=m.id_type_matiere)
-INNER JOIN module modu ON (modu.id_module=m.id_module)
-INNER JOIN moyenne moy ON (moy.id_matiere=m.id_matiere)
-WHERE 
-  m.bonus=0
-GROUP BY
-  moy.id_etudiant,
-  modu.id_periode,
-  m.id_type_matiere
-) AS groupe ON (e.id_etudiant=groupe.id_etudiant)
-LEFT JOIN (
-SELECT 
-  CONCAT('MGS',modu.id_periode) AS  cat_note,
-  modu.id_periode,
-  mmoy.id_etudiant,
-  SUM(mmoy.moyenne*mmoy.coefficient)/SUM(mmoy.coefficient) AS moyenne
-FROM `moyenne_module` mmoy
-INNER JOIN module modu ON (modu.id_module=mmoy.id_module)
-WHERE 
-  IFNULL(modu.id_periode,0)>0 AND
-  mmoy.moyenne IS NOT NULL
-GROUP BY
-  modu.id_periode,
-  mmoy.id_etudiant
-) AS semestre ON (
-  e.id_etudiant=semestre.id_etudiant AND 
-  groupe.id_periode=semestre.id_periode
-)
-GROUP BY
-  e.id_etudiant,
-  groupe.cat_note
-) AS aide
-GROUP BY 
-  id_etudiant
-HAVING 
-  MGS1 IS NOT NULL OR
-  MGS2 IS NOT NULL
-ORDER BY
-  situation,
-  nom
-
------ DERNIERE REQUETE -----
-
-
-SELECT 
-RIGHT(DATABASE(),4) AS annee,
-aux_voie.voie_lib,
-e.nom,
-e.prenom,
-e.libelle_etat_civil,
-e.id_etudiant,
-mo.libelle AS ue,
-m.id_type_matiere,
-m.intitule AS matiere,
-m.code_matiere AS code_matiere,
-ROUND(moy.moyenne,2) AS moyenne_matiere,
-ROUND(moymo.moyenne,2) AS moyenne_ue,
-e.paysnai,
-e.id_ref_paysnai,
-e.id_nationalite,
-e.libelle_statut_etudiant,
-e.concours_origine,
-e.concours_annee,
-e.etab_origine_formation,
-e.bac_annee,
-e.bac_mention,
-e.certif_anglais_org,
-e.certif_anglais_score,
-e.toeic
-FROM moyenne moy
-LEFT JOIN etudiant e ON (e.id_etudiant=moy.id_etudiant)
-LEFT JOIN matiere m ON (m.id_matiere=moy.id_matiere)
-LEFT JOIN module mo ON (m.id_module=mo.id_module)
-LEFT JOIN moyenne_module moymo ON (moymo.id_module=m.id_module AND moymo.id_etudiant=e.id_etudiant)
-LEFT JOIN (
-	SELECT 
-	  ve.id_etudiant, 
-	  GROUP_CONCAT(DISTINCT v.lib ORDER BY v.lib) AS voie_lib
-	FROM voie_etudiant ve
-	INNER JOIN voie v ON (v.id_voie=ve.id_voie)
-	GROUP BY ve.id_etudiant
-) aux_voie ON (aux_voie.id_etudiant=e.id_etudiant)
-GROUP BY 
-  e.id_etudiant, 
-  moymo.id_module, 
-  moy.id_matiere
-ORDER BY
-  aux_voie.voie_lib,
-  e.id_etudiant DESC
+    voie.voie_lib,
+    e.id_etudiant DESC,
+    m.id_module,
+    m.id_matiere;
