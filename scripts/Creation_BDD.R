@@ -6,6 +6,8 @@ library(writexl)
 library(labelled)
 library(sjlabelled)
 library(stringi)
+library(readr)
+
 
 ######### Lecture des fichiers de la requete principale ##########
 
@@ -37,7 +39,6 @@ for (fichier in fichiers_csv_tries) {
 # Vérification de doublons
 bdd <- bdd %>%
   distinct(X.annee_courante, X.id_etudiant, X.code_matiere, .keep_all = TRUE)
-
 
 ######### Lecture des fichiers de la requete points bonus et jury ##########
 
@@ -184,7 +185,7 @@ bdd_2 <- bdd %>%
 
 # Récupération du travail de Stéphane sur les filières 3A
 
-filieres_stephane_3A <- readxl::read_xlsx("data/bdd_2015_2024 explo.xlsx", sheet = "Filières") %>% 
+filieres_stephane_3A <- readxl::read_xlsx("data/modifs stephane/bdd_2015_2024 explo.xlsx", sheet = "Filières") %>% 
   select(matiere, annee, filiere_3Abis)
 filieres_stephane_3A$annee <- substr(filieres_stephane_3A$annee,1,4)
   
@@ -232,7 +233,7 @@ bdd_rang <- read_parquet("Z:/0_Direction_des_Etudes/Base élève/analyse_bdd_ele
 bdd_rang_1 <- bdd_rang %>% 
   select(annee,id_etudiant,code_matiere,rang_matiere, rang_max_matiere, point_jury)
 
-bdd_3b <- left_join(bdd_3, bdd_rang_1, by = c("annee","id_etudiant","code_matiere"))
+bdd_4 <- left_join(bdd_3, bdd_rang_1, by = c("annee","id_etudiant","code_matiere"))
 
 bdd_4$point_jury <- ifelse(grepl("points de jury", bdd_4$matiere, ignore.case = TRUE),
                            bdd_4$point_jury, 
@@ -260,10 +261,8 @@ numeriser <- function(data, vars, decimal_mark = ",") {
 }
 
 
-library(readr)
-
 bdd_4 <- numeriser(
-  bdd_3b,
+  bdd_4,
   c("rang_matiere",
   "rang_max_matiere",
   "moyenne_generale",
@@ -287,10 +286,10 @@ bdd_4 <- bdd_4 %>% arrange(desc(annee), voie_lib, nom) %>%
 
 ## Anonymisation
 
-# 🔑 Clé secrète pour chiffrer/déchiffrer
+# Clé secrète pour chiffrer/déchiffrer
 cle_secrete <- "Theophilus81!" # (me demander mon mot de passe - CL)
 
-# 🔐 Fonction de chiffrement (XOR + Base64)
+# Fonction de chiffrement (XOR + Base64)
 encrypt_id <- function(id_vector, cle) {
   sapply(id_vector, function(id) {
     id_raw <- as.integer(charToRaw(as.character(id)))
@@ -301,7 +300,7 @@ encrypt_id <- function(id_vector, cle) {
   })
 }
 
-# 🔓 Fonction de déchiffrement (Base64 + XOR)
+# Fonction de déchiffrement (Base64 + XOR)
 decrypt_id <- function(enc_vector, cle) {
   sapply(enc_vector, function(enc) {
     chiffré <- as.integer(base64enc::base64decode(enc))
@@ -313,28 +312,74 @@ decrypt_id <- function(enc_vector, cle) {
 }
 
 
-# 🔐 Chiffrement
+# Chiffrement
 bdd_4$id_crypte <- encrypt_id(bdd_4$id_etudiant, cle_secrete)
 
 bdd_4 <- bdd_4 %>% 
   select(-id_etudiant)
 
-# 🔓 Déchiffrement
+# Déchiffrement
 #bdd_4$id_decrypte <- decrypt_id(bdd_4$id_crypte, cle_secrete)
 
-# ✅ Vérification
+#  Vérification
 print(bdd_4)
 print(all(bdd_4$id_etudiant == bdd_4$id_decrypte))  # Doit afficher TRUE
 
+# Ajout de variables
+
+# recoder spe_entree pour maths
+bdd_4 <- bdd_4 %>%
+  mutate(spe_entree = case_when(
+    grepl("mpi|mp2i|math[\\s\\-]*phys[\\s\\-]*info", etab_origine_formation, ignore.case = TRUE) ~ "MPI",
+    grepl("pc|ps", etab_origine_formation, ignore.case = TRUE) ~ "PC/PSI",
+    grepl("mp", etab_origine_formation, ignore.case = TRUE) ~ "MP",
+    grepl("math", concours_origine, ignore.case = TRUE) ~ "MATH_NC",
+    TRUE ~ NA_character_
+  ))
+
+# recoder spe_entree pour ECO
+bdd_4$spe_entree <- ifelse(bdd_4$concours_origine =="Concours externe : spécialité 'économie et sciences sociales'",
+                           "Eco BL", 
+                           ifelse(bdd_4$concours_origine =="concours externe : spécialité 'économie et sciences sociales'",
+                                  "Eco BL",
+                                  ifelse (bdd_4$concours_origine == "Concours externe : spécialité 'économie et gestion'",
+                                          "Eco D2",
+                                          bdd_4$spe_entree)))
+
+# recoder spe_entree pour Autres
+bdd_4$spe_entree <- ifelse(bdd_4$concours_origine =="Admission sur titres (dossier + entretien) : niveau L3",
+                              "AST 1A", 
+                              ifelse(bdd_4$concours_origine =="Admission sur titres (dossier + entretien) : niveau M1 ou plus, admission en 1ère année",
+                                     "AST 1A",
+                                     ifelse (bdd_4$concours_origine == "Admission sur titres (dossier + entretien) : niveau M1 ou plus, admission en 2e année",
+                                             "AST 2A",
+                                             ifelse (bdd_4$concours_origine == "Concours externe",
+                                                     "ERASMUS - Contractuels",
+                                                     ifelse (bdd_4$concours_origine == "Contractuel",
+                                                             "ERASMUS - Contractuels",
+                                                             ifelse (bdd_4$concours_origine == "Erasmus",
+                                                                     "ERASMUS - Contractuels",
+                                                                     bdd_4$spe_entree))))))
+
+table(bdd_4$spe_entree)
+
+# Il s'agit de continuer d'affiner à partir de tous les cas possibles
+sort(table(bdd_4$etab_origine_formation), decreasing = TRUE)
+
+# Prépa étoile
+
+bdd_4 <- bdd_4 %>%
+  mutate(prepa_etoile = case_when(
+    grepl("\\*", etab_origine_formation, ignore.case = TRUE) ~ 1,
+    TRUE ~ 0
+  ))
+
+table(bdd_4$prepa_etoile)
+
 # Export en csv
-write.csv2(bdd, "data/bdd_2015_2024.csv", row.names = FALSE)
+write.csv2(bdd_4, "data/bdd_2015_2024.csv", row.names = FALSE)
 
 # Export en xlsx
-bdd_4 <- bdd_4 %>% 
-  mutate(across(where(is.character),
-                ~ stri_encode(., from = "latin1", to = "UTF-8"))) 
-
-library(writexl)
 write_xlsx(bdd_4, path = "data/bdd_2015_2024.xlsx")
 
 # Export en parquet
@@ -347,8 +392,7 @@ write_rds(bdd_4, "data/bdd_2015_2024.rds")
 
 # Labels pour création d'un dictionnaire
 bdd_4$annee_scolaire <- structure(bdd_4$annee_scolaire, label = "Année de scolarité")
-bdd_4$nom <- structure(bdd_4$nom , label = "Nom de l'étudiant")
-bdd_4$prenom <- structure(bdd_4$prenom, label = "Prénom de l'étudiant")
+bdd_4$id_crypte <- structure(bdd_4$id_crypte , label = "Identifiant crypté de l'étudiant")
 bdd_4$sexe <- structure(bdd_4$sexe, label = "Sexe de l'étudiant")
 bdd_4$nationalite <- structure(bdd_4$nationalite, label = "Nationalité de l'étudiant")
 bdd_4$id_nationalite <- structure(bdd_4$id_nationalite, label = "Identifiant de la nationalité de l'étudiant")
