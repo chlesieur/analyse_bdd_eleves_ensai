@@ -287,7 +287,7 @@ bdd_4 <- bdd_4 %>% arrange(desc(annee), voie_lib, nom) %>%
 ## Anonymisation
 
 # Clé secrète pour chiffrer/déchiffrer
-cle_secrete <- "Theophilus81!" # (me demander mon mot de passe - CL)
+cle_secrete <- "" # (me demander mon mot de passe - CL)
 
 # Fonction de chiffrement (XOR + Base64)
 encrypt_id <- function(id_vector, cle) {
