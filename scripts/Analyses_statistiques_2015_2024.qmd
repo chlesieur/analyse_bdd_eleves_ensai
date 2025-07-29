@@ -1,7 +1,6 @@
 ---
 title: "Analyse_statistique"
-format: docx
-editor: visual
+format: html
 ---
 
 ```{r}
@@ -13,7 +12,7 @@ library(forcats)
 library(arrow)
 library(scales)
 
-bdd <- read_parquet("Z:/0_Direction_des_Etudes/Base  élève/analyse_bdd_eleves_ensai/data/bdd_2015_2024.parquet")
+bdd <- read_parquet("Z:/0_Direction_des_Etudes/Base élève/analyse_bdd_eleves_ensai/data/bdd_2015_2024.parquet")
 
 bdd_2 <-  bdd %>% 
   filter(annee_ecole != "Autres")
@@ -25,7 +24,7 @@ bdd_2 <-  bdd %>%
 ```{r}
 
 nb_eleve_par_annee <- bdd_2 %>% 
-  distinct(id_etudiant, annee, annee_ecole) %>%
+  distinct(id_crypte, annee, annee_ecole) %>%
   count(annee, annee_ecole) %>%                   
   pivot_wider(
     names_from  = annee_ecole,                    
@@ -37,8 +36,6 @@ nb_eleve_par_annee <- bdd_2 %>%
 nb_eleve_par_annee
 
 ```
-
-
 
 ```{r}
 
@@ -64,57 +61,9 @@ nb_eleve_par_annee %>%
 
 ```
 ```{r}
-
-
-ggplot(nb_long_ord,
-       aes(x = annee, y = effectif, fill = niveau)) +
-  geom_area(
-    alpha    = 0.85,
-    colour   = "white",
-    position = position_stack(reverse = TRUE)   # 1A en bas
-  ) +
-  scale_x_continuous(breaks = pretty(nb_long_ord$annee)) +
-  scale_y_continuous(
-    labels  = comma_format(),
-    expand  = expansion(mult = c(0, 0.05))
-  ) +
-  scale_fill_brewer(
-    palette = "Pastel1",
-    name    = "Niveau",
-    breaks  = c("1A", "2A", "3A")
-  ) +
-  guides(fill = guide_legend(reverse = TRUE)) +
-  
-  # ── Style « fond blanc » soigné ───────────────────────────────
-  theme_classic(base_size = 13) +                     # base blanche
-  theme(
-    # Bordure fine autour du panneau
-    panel.border       = element_rect(colour = "grey80", fill = NA, linewidth = 0.6),
-    # Grille horizontale légère
-    panel.grid.major.y = element_line(colour = "grey90", linewidth = 0.4),
-    panel.grid.minor   = element_blank(),
-    # Axes plus visibles
-    axis.line          = element_line(colour = "grey40", linewidth = 0.6),
-    # Légende compacte, sur fond blanc sans bordure
-    legend.position    = c(0.85, 0.85),
-    legend.justification = c("right", "top"),
-    legend.background  = element_rect(fill = "white", colour = NA)
-  ) +
-  
-  # Titres
-  labs(
-    title    = "Évolution des effectifs cumulés par niveau",
-    x        = "Année scolaire",
-    y        = "Nombre d'étudiants"
-  )   
-
-```
-
-
-```{r}
 nb_par_cpge <- bdd_2 %>% 
   filter(annee_ecole == "1A") %>% 
-  distinct(id_etudiant, annee, cpge) %>%  
+  distinct(id_crypte, annee, cpge) %>%  
   count(annee, cpge, name = "n") %>%      
   pivot_wider(                                 
     names_from  = cpge,
@@ -129,73 +78,11 @@ nb_par_cpge
 
 ```{r}
 
-nb_cpge_pct <- nb_cpge_long %>%                 # ← table longue (annee / cpge / effectif)
-  group_by(annee) %>%
-  mutate(
-    pct   = effectif / sum(effectif),
-    label = if_else(pct >= 0.05,                 # n'affiche que si ≥ 5 %, sinon ""
-                    percent(pct, accuracy = 1),
-                    "")
-  ) %>%
-  ungroup()
-
-# ------------------------------------------------------------------
-# 2. Construction du plot
-# ------------------------------------------------------------------
-p <- ggplot(nb_cpge_pct,
-            aes(x = factor(annee),
-                y = pct,
-                fill = cpge)) +
-  geom_col(width = .80, colour = "white") +
-  geom_text(                                # ← les % au centre des segments
-    aes(label = label),
-    position = position_stack(vjust = 0.5),
-    colour   = "white",
-    size     = 3.0
-  ) +
-  scale_fill_viridis_d(option = "plasma", name = "Voie d’entrée") +
-  scale_y_continuous(
-    labels = percent_format(accuracy = 1),
-    expand = c(0, 0)
-  ) +
-  labs(
-    title    = "Répartition (%) des 1A par voie d’entrée",
-    subtitle = "Chaque barre = 100 % des 1A d’une année (étiquettes ≥ 5 %)",
-    x        = "Année universitaire",
-    y        = "Part de chaque voie"
-  ) +
-  theme_classic(base_size = 13) +
-  theme(
-    panel.grid.major.y = element_line(colour = "grey90"),
-    legend.position    = "bottom"
-  )
-
-# ------------------------------------------------------------------
-# 3. Aperçu à l’écran
-# ------------------------------------------------------------------
-print(p)
-
-# ------------------------------------------------------------------
-# 4. Export PNG haute définition
-# ------------------------------------------------------------------
-ggsave(
-  filename = "repartition_1A_voies.png",
-  plot     = p,
-  width    = 10,    # pouces (≈25 cm)
-  height   = 6,     # pouces
-  dpi      = 300    # qualité impression
-)
-
-```
-
-```{r}
-
 moyennes_2A <- bdd_2 %>% 
-  filter(annee_ecole == "2A") %>%              # ← on garde seulement les 2A
-  mutate(moyenne_generale = moyenne_generale / 100) %>%   # échelle 0-20
+  filter(annee_ecole == "2A") %>%              # ← on garde seulement les 2A   # échelle 0-20
   group_by(annee, cpge) %>% 
   summarise(
-    nb_etudiants = n_distinct(id_etudiant),
+    nb_etudiants = n_distinct(id_crypte),
     moy_generale = round(mean(moyenne_generale, na.rm = TRUE), 2),
     .groups = "drop"
   )
@@ -207,10 +94,10 @@ moyennes_2A
 ```{r}
 moyennes_2A <- bdd_2 %>% 
   filter(annee_ecole == "2A") %>%                       # uniquement les 2A
-  mutate(moyenne_generale = moyenne_generale / 100) %>% # notes ramenées sur 20
+  mutate(moyenne_generale = moyenne_generale) %>% # notes ramenées sur 20
   group_by(annee, cpge) %>% 
   summarise(
-    nb_etudiants = n_distinct(id_etudiant),
+    nb_etudiants = n_distinct(id_crypte),
     moy_generale = mean(moyenne_generale, na.rm = TRUE),
     .groups = "drop"
   ) %>% 
@@ -243,14 +130,4 @@ p <- ggplot(moyennes_2A,
 
 print(p)   # aperçu à l’écran
 
-# ── 3. Export PNG haute définition ──────────────────────────────────────────
-ggsave(
-  filename = "moyenne_2A_voies.png",   # change en .pdf ou .svg si besoin
-  plot     = p,
-  width    = 10,                       # pouces (≈ 25 cm)
-  height   = 5,
-  dpi      = 300                       # qualité impression
-)
-
 ```
-

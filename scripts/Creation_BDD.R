@@ -243,6 +243,7 @@ table(bdd_4$point_jury)
 table(bdd_4$point_bonus)
 
 ## Numérisation de certaines variables
+bdd_4$moyenne_matiere <- gsub("\\.", ",", bdd_4$moyenne_matiere)
 
 numeriser <- function(data, vars, decimal_mark = ",") {
   data %>% mutate(across(
@@ -265,11 +266,11 @@ bdd_4 <- numeriser(
   bdd_4,
   c("rang_matiere",
   "rang_max_matiere",
+  "moyenne_matiere",
   "moyenne_generale",
   "total_coeff",
   "total_ects",
   "moyenne_generale",
-  "moyenne_matiere",
   "moyenne_ue",
   "toeic",
   "MES1", "MHS1", "MIS1", "MSS1",
@@ -287,7 +288,7 @@ bdd_4 <- bdd_4 %>% arrange(desc(annee), voie_lib, nom) %>%
 ## Anonymisation
 
 # Clé secrète pour chiffrer/déchiffrer
-cle_secrete <- "" # (me demander mon mot de passe - CL)
+cle_secrete <- "Theophilus81!" # (me demander mon mot de passe - CL)
 
 # Fonction de chiffrement (XOR + Base64)
 encrypt_id <- function(id_vector, cle) {

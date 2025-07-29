@@ -38,7 +38,7 @@ bdd_1a2a$spe_entree <- ifelse(bdd_1a2a$concours_origine =="Admission sur titres 
                                              bdd_1a2a$spe_entree))))))
 
 #  conserver une ligne par eleve et par année
-bdd_1a2a_net <- bdd_1a2a[!duplicated(cbind(bdd_1a2a$id_etudiant,bdd_1a2a$annee)),]
+bdd_1a2a_net <- bdd_1a2a[!duplicated(cbind(bdd_1a2a$id_crypte,bdd_1a2a$annee)),]
 
 
 

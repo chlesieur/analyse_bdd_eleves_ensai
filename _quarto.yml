@@ -14,15 +14,15 @@ website:
 
       # 2) Premières analyses
       - text: "Premières analyses"
-        href: doc/Premières analyses.qmd   
+        href: scripts/Premières analyses.qmd   
 
       # 3) Requete SQL
       - text: "Requête SQL"
-        href: doc/Requête SQL.qmd   
+        href: scripts/Requête SQL.qmd   
 
       # 4) entrée avec un sous-menu
       - text: "Code R"
-        href: doc/Code R.qmd  
+        href: scripts/Code R.qmd  
 
     right:
       - text: "À propos"
