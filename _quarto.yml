@@ -14,7 +14,7 @@ website:
 
       # 2) Premières analyses
       - text: "Premières analyses"
-        href: scripts/Premières analyses.qmd   
+        href: scripts/Analyses_statistiques_2015_2024.qmd   
 
       # 3) Requete SQL
       - text: "Requête SQL"
@@ -22,7 +22,7 @@ website:
 
       # 4) entrée avec un sous-menu
       - text: "Code R"
-        href: scripts/Code R.qmd  
+        href: scripts/Requête SQL.qmd 
 
     right:
       - text: "À propos"
