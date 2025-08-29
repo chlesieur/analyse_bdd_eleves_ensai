@@ -264,7 +264,7 @@ bdd_2 <- bdd_y %>%
       TRUE ~ "Autres"
     )
   ) %>% 
-  select(-c(prenom.y, nom.y, prenom.x, nom.x))
+  select(-c(prenom.y, nom.y, prenom.x, nom.x, id))
 
 # Récupération du travail de Stéphane sur les filières 3A
 
@@ -358,7 +358,7 @@ bdd_4 <- numeriser(
   "toeic",
   "MES1", "MHS1", "MIS1", "MSS1",
   "MES2", "MHS2", "MIS2", "MSS2",
-  "MGS1", "MGS2"
+  "MGS1", "MGS2","ccc_ran_com"
 ))
 
 bdd_4 <- bdd_4 %>% arrange(desc(annee), voie_lib, nom) %>% 
@@ -548,7 +548,9 @@ bdd_4$bonus_type <- structure(bdd_4$bonus_type, label = "type de bonus (à déte
 bdd_4$id_commentaire_bulletin_ref <- structure(bdd_4$id_commentaire_bulletin_ref, label = "Décision de validation (cf table table_bulletin_ref_id_bonus)")
 bdd_4$verrou <- structure(bdd_4$verrou, label = "Variable récupérée dans commentaire (à déterminer)")
 bdd_4$id_crypte <- structure(bdd_4$id_crypte, label = "Identifiant crypté de l'étudiant")
-bdd_4$ccc_ran_com <- structure(bdd_4$ccc_ran_com, label = "Classement au concours commun mathématique")
+bdd_4$ccc_ran_com <- structure(bdd_4$ccc_ran_com, label = "Classement au concours commun mathématiques")
+bdd_4$spe_entree <- structure(bdd_4$spe_entree, label = "Spécialité à l'entrée")
+bdd_4$prepa_etoile <- structure(bdd_4$prepa_etoile, label = "Provenance d'une prépa étoile")
 
 
 
@@ -564,6 +566,3 @@ dictionnaire_labels <- function(df) {
 dict <- dictionnaire_labels(bdd_4)
 
 write_xlsx(dict, path = "data/dictionnaire.xlsx")
-
-
-
