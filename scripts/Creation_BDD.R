@@ -7,15 +7,16 @@ library(labelled)
 library(sjlabelled)
 library(stringi)
 library(readr)
-
+library(readxl)
+library(janitor)
 
 ######### Lecture des fichiers de la requete principale ##########
 
 # Répertoire où déposer les exports pamplemousse tels quels
-repertoire <- "data/export pamplemousse"
+repertoire <- "data"
 
 # Lecture automatique des exports pamplemousse
-fichiers_csv <- list.files(path = paste0(repertoire,"/requete principale"), pattern = "*.csv")
+fichiers_csv <- list.files(path = paste0(repertoire,"/export pamplemousse/requete principale"), pattern = "*.csv")
 
 # tri les fichiers 
 fichiers_csv_tries <- sort(fichiers_csv)
@@ -25,7 +26,7 @@ bdd <- data.frame()
 
 for (fichier in fichiers_csv_tries) {
   
-  data <- read.csv2(paste0(repertoire,"/requete principale/",fichier), encoding = "latin1")
+  data <- read.csv2(paste0(repertoire,"/export pamplemousse/requete principale/",fichier), encoding = "latin1")
   
   # Vérifie si les colonnes sont les mêmes que celles de la bdd
   if (ncol(bdd) > 0 && !identical(names(data), names(bdd))) {
@@ -42,11 +43,8 @@ bdd <- bdd %>%
 
 ######### Lecture des fichiers de la requete points bonus et jury ##########
 
-# Répertoire où déposer les exports pamplemousse tels quels
-repertoire <- "data/export pamplemousse"
-
 # Lecture automatique des exports pamplemousse
-fichiers_csv <- list.files(path = paste0(repertoire,"/requete points bonus et jury"), pattern = "*.csv")
+fichiers_csv <- list.files(path = paste0(repertoire,"/export pamplemousse/requete points bonus et jury"), pattern = "*.csv")
 
 # tri les fichiers 
 fichiers_csv_tries <- sort(fichiers_csv)
@@ -56,7 +54,7 @@ bdd_points <- data.frame()
 
 for (fichier in fichiers_csv_tries) {
   
-  data <- read.csv2(paste0(repertoire,"/requete points bonus et jury/",fichier), encoding = "latin1")
+  data <- read.csv2(paste0(repertoire,"/export pamplemousse/requete points bonus et jury/",fichier), encoding = "latin1")
   
   # Vérifie si les colonnes sont les mêmes que celles de la bdd
   if (ncol(bdd_points) > 0 && !identical(names(data), names(bdd_points))) {
@@ -74,7 +72,32 @@ bdd_points_1 <- bdd_points %>%
 bdd_points_2 <- bdd_points_1 %>%
   distinct(X.annee_courante, X.id_etudiant, X.code_matiere, .keep_all = TRUE)
 
-################# fusion des deux bases ########################"""
+######### Lecture d'es fichiers de la requete points bonus et jury'admission ##########
+
+integrants_maths_att <- "data/admissions/integrants_maths_attachés_2015_2024.xlsx"
+integrants_maths_ing <- "data/admissions/integrants_maths_ingénieurs_2015_2024.xlsx"
+
+onglets_att <- excel_sheets(integrants_maths_att)
+
+integrants_maths_att_2015_2024 <- map_dfr(
+  onglets_att,
+  ~ read_excel(integrants_maths_att, sheet = .x) %>%
+    clean_names() %>%   # met les noms en snake_case
+    select(nom, prenom, ccc_ran_com)
+)
+
+onglets_ing <- excel_sheets(integrants_maths_ing)
+
+integrants_maths_ing_2015_2024 <- map_dfr(
+  onglets_ing,
+  ~ read_excel(integrants_maths_ing, sheet = .x) %>%
+    clean_names() %>%   # met les noms en snake_case
+    select(nom, prenom, ccc_ran_com)
+)
+
+integrants_maths_2015_2024 <- rbind(integrants_maths_att_2015_2024,integrants_maths_ing_2015_2024)
+
+################# fusion des bases ########################"""
 
 bdd_2 <- left_join(bdd, bdd_points_2, 
                  by = c("X.annee_courante",
@@ -82,8 +105,6 @@ bdd_2 <- left_join(bdd, bdd_points_2,
                         "X.code_matiere"))
 
 bdd <- unique(bdd_2)
-
-######################## Nettoyage ##########################
 
 # Gestion des problèmes de formats (suppression des =)
 noms_variables <- names(bdd)
@@ -101,11 +122,72 @@ supprimer_egal <- function(x) {
 bdd <- as.data.frame(sapply(bdd, supprimer_egal)) %>% 
   rename(annee = annee_courante)
 
-# Création des variables de travail
-# Choix à discuter
+# fonction pour épurer les nom prenoms en vue de l'appariemment
+clean_text <- function(x, first_only = TRUE) {
+  x <- ifelse(is.na(x), "", x)                          # NA -> ""
+  x <- stringr::str_to_lower(x)                         # minuscules
+  x <- stringr::str_trim(x)                             # trim
+  x <- stringi::stri_trans_general(x, "Latin-ASCII")    # é/è/É→e, ç→c, œ→oe
+  
+  # on garde provisoirement les espaces pour pouvoir prendre le 1er "mot"
+  x <- stringr::str_replace_all(x, "[^a-z0-9 ]", " ")
+  x <- stringr::str_squish(x)
+  
+  if (isTRUE(first_only)) {
+    x <- sub("\\s.*$", "", x)                           # ne garder que avant le 1er espace
+  }
+  
+  # nettoyage final : plus que lettres/chiffres
+  x <- gsub("[^a-z0-9]", "", x)
+  x
+}
 
-bdd_2 <- bdd %>%
+bdd <- bdd %>% mutate(id = paste0(clean_text(nom, TRUE), clean_text(prenom, TRUE)))
+
+integrants_maths_2015_2024 <- integrants_maths_2015_2024 %>%
+  mutate(id = paste0(clean_text(nom, TRUE), clean_text(prenom, TRUE)))
+
+bdd_x <- bdd %>%
+  left_join(integrants_maths_2015_2024, by = "id")
+
+
+# Etudes des quelques cas non appariés
+non_appariees <- integrants_maths_2015_2024 %>%
+  anti_join(bdd, by = "id") %>% 
+  filter(!is.na(nom))
+
+bdd_x_unique <- bdd_x %>%
+  distinct(nom.x, prenom.x, .keep_all = TRUE)
+
+# Nombre de lignes appariées
+nb_match <- sum(!is.na(bdd_x_unique$nom.y))
+
+# Taux d’appariement (%)
+taux_appariement <- nb_match / nrow(integrants_maths_2015_2024) * 100
+taux_appariement
+
+# Ajout des non appariés à la main
+bdd_y <- bdd_x %>%
+  mutate(ccc_ran_com = case_when(
+    id == "diopn" ~ 2393L,
+    id == "seghaieraziz" ~ 2548L,
+    id == "mahjoubibeyrem" ~ 2541L,
+    id == "blaiechamine" ~ 2074L,
+    TRUE ~ ccc_ran_com))
+
+test <- bdd_y %>% filter(id %in% c("diopn","seghaieraziz","mahjoubibeyrem","blaiechamine"))
+
+# Restait une seule interrogation : Laurie BANOS a-t-elle changé de nom de famille
+
+test2 <- bdd_y %>%  filter(id == "pinellaurie")
+# ça ne semble pas être Laurie PINEL et l'autre Laurie 'LETERRIER' a une affectation donc a priori non
+
+################# Création des variables de travail ########################"""
+
+bdd_2 <- bdd_y %>%
   mutate(
+    nom = nom.x,
+    prenom=prenom.x,
     annee_scolaire = as.character(paste0(as.numeric(annee),"-",as.numeric(annee)+1)),
     annee_ecole = case_when(
       substr(voie_lib, 1, 2) == "1A" ~ "1A",
@@ -181,7 +263,8 @@ bdd_2 <- bdd %>%
       id_type_matiere == 4~ "Langues/Humanités",
       TRUE ~ "Autres"
     )
-  )
+  ) %>% 
+  select(-c(prenom.y, nom.y, prenom.x, nom.x))
 
 # Récupération du travail de Stéphane sur les filières 3A
 
@@ -465,6 +548,7 @@ bdd_4$bonus_type <- structure(bdd_4$bonus_type, label = "type de bonus (à déte
 bdd_4$id_commentaire_bulletin_ref <- structure(bdd_4$id_commentaire_bulletin_ref, label = "Décision de validation (cf table table_bulletin_ref_id_bonus)")
 bdd_4$verrou <- structure(bdd_4$verrou, label = "Variable récupérée dans commentaire (à déterminer)")
 bdd_4$id_crypte <- structure(bdd_4$id_crypte, label = "Identifiant crypté de l'étudiant")
+bdd_4$ccc_ran_com <- structure(bdd_4$ccc_ran_com, label = "Classement au concours commun mathématique")
 
 
 
