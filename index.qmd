@@ -1,7 +1,21 @@
 ---
-title: "Analyse BDD élèves ENSAI"
-description: "Première analyse sur les promotions 2015 à 2024"
-author: "Christophe Lesieur"
+title: "Construction et analyse de la base élèves"
+description: "Premières analyses sur les promotions 2015 à 2024"
+authors: "Christophe Lesieur, Laurent Costa, Stéphane Legleye"
 format: html
 from: markdown+emoji
 ---
+
+Le projet a pour but d'objectiver les trajectoires des élèves à partir de leurs parcours d'origine jusqu'à leurs premières expériences professionnelles, en commençant par leur choix de filière de spécialisation.
+
+Il s'agit de doter l'ENSAI de statistiques sur les élèves afin de mieux connaître l'évolution du profil de ses étudiants et de piloter au mieux l'offre de formation. Un des enjeux est mieux appréhender l'impact du passage de la sélection des candidats du concours "Mathématiques" par le CCINP et les évolutions récentes (depuis 2023, avec ouverture du concours aux MPI, PC et PSI), mais pas uniquement : les différences de statut (attaché ou ingénieur), la provenance des élèves INSEE (concours interne ou externe), la réussite, l'échec (redoublement/exclusion/démission) et les choix d'orientation des intégrants issus des concours "Économie et Sciences Sociales" et "Économie et Gestion", les admis sur titres, les double-diplôme, la généralisation de l'anglais dans les cours sont autant de sujets d'intérêt pour l'école et la connaissance de ses élèves.
+
+La base de données est constituée de :
+
+-   Données issues du logiciel de scolarité Pamplemousse, notamment sur la réussite durant la scolarité. Celles-ci sont extraites à partir d'une requête SQL et mises en forme et documentée par un Script R présentés dans la section "Documentation"
+
+-   Données sur les admissions, notamment sur le rang aux concours d'entrée
+
+-   Elle sera potentiellement enrichie d'autres sources, par exemple de données sur les parcours à la sortie de l'école, voire de données issues de Moodle si le temps permet d'ouvrir sur des question de stratégies pédagogiques (avec des analyses dans le champ des *Learning Analytics*)
+
+Cette démarche inédite à l'ENSAI est rendue possible par l'accès aux module de requête dans Pamplemousse depuis la fin de l'année 2024. La profondeur historique pourra éventuellement être ajustée, les données étant disponibles depuis 2010 (dans des formats différents).
