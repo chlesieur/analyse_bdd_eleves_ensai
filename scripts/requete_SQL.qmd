@@ -9,6 +9,8 @@ format:
 ---
 
 ```{css}
+#| echo: false
+
 :root {
   font-size: 12px;      /* Police relativement petite (modifier ici si besoin) */
 }
@@ -16,6 +18,7 @@ format:
 body {
   font-family: "Inter", sans-serif; /* Police moderne et lisible */
 }
+
 ```
 
 # Introduction
@@ -23,10 +26,6 @@ body {
 La requête se nomme "Scola - Extraction Notes. Elle fonctione sur toutes les années de 2015-2016 à 2024-2025". Il s'agit de la lancer année par année pour ensuite les compiler avec le programme "Code R.qmd"
 
 # Requête SQL
-
-/* =======================================================================
-   SYNTHÈSE : grain (id_etudiant, id_module, id_matiere)
-   ======================================================================= */
 
 SELECT
     RIGHT(DATABASE(),4)                     AS annee_courante,
