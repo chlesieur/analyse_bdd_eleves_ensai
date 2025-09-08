@@ -27,7 +27,7 @@ if (!requireNamespace("DT", quietly = TRUE)) {
 library(readxl)
 library(DT)
 
-chemin_dict <- readxl::read_xlsx("Z:/0_Direction_des_Etudes/Base_eleve/data/dictionnaire.xlsx")
+dict <- readxl::read_xlsx("Z:/0_Direction_des_Etudes/Base_eleve/data/dictionnaire.xlsx")
 
 # En-têtes lisibles
 names(dict) <- c("Variable", "Label", "Format")
