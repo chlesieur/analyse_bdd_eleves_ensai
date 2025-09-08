@@ -32,7 +32,6 @@ La requête se nomme *« Scola - Extraction notes - Requête principale - Pour B
 Elle fonctionne pour toutes les années **2015–2016 à 2024–2025**.
 
 
-```{sql}
 SELECT
     RIGHT(DATABASE(),4)                     AS annee_courante,
 
@@ -333,14 +332,11 @@ ORDER BY
     e.id_etudiant DESC,
     m.id_module,
     m.id_matiere;
-```
 
 # Requête secondaire
 
 La requête *« Scola - Extraction notes - Points de bonus et de jury - Pour Base_eleves »*  
 récupère **les points de jury** et **les bonus**.
-
-```{sql}
 
 WITH voie_etud AS (
     SELECT ve.id_etudiant
@@ -453,6 +449,4 @@ ORDER BY
     e.id_etudiant DESC,
     matiere.id_module,
     matiere.id_matiere;
-
-```
 
