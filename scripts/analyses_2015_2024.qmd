@@ -69,7 +69,7 @@ bdd_3A$fil_3A <- ifelse(bdd_3A$filiere_3A == "Autres" & bdd_3A$voie_lib %in% c("
 
 ## 1. Données de cadrage
 
-### 1.1. Nombre d'étudiants par année
+### 1.1. Sur les élèves toutes années confondues
 
 ```{r}
 
@@ -1353,7 +1353,7 @@ bdd_bloc_1A_2A %>%
 
 ## 3. Rang d'intégration et scolarité à l'ENSAI
 
-### 2.1 Évolution des écarts de rang d'intégration entre attachés et ingénieurs (filière mathématiques)
+### 2.1. Évolution des écarts de rang d'intégration entre attachés et ingénieurs (filière mathématiques)
 
 Afin de comparer les rangs année par année et par filière, un rang standardisé est calculé pour chaque année. Il correspond à son rang au concours commun divisé par le rang maximum d'intégration à l'Ensai au concours commun.
 
