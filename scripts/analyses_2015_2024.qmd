@@ -17,14 +17,14 @@ library(readxl)
 
 bdd <- read_parquet("Z:/0_Direction_des_Etudes/Base_eleve/data/bdd_2015_2024.parquet") %>% filter(annee_ecole != "Autres")
 
+# creation boucles sortie stat par bloc annee
+bdd$bloc_an<- ifelse(bdd$annee %in% c(2015,2016,2017),"2015-2017",ifelse (bdd$annee %in% c(2018,2019,2020),"2018-2020",ifelse(bdd$annee %in% c(2021,2022),"2021-2022","2023-2024")))
+
 # travaux sur 1A et 2A
 bdd_1A_2A <- bdd[bdd$annee_ecole %in% c("1A","2A"),]
 
 #  conserver une ligne par eleve et par année
 bdd_1A_2A_unique <- bdd_1A_2A[!duplicated(cbind(bdd_1A_2A$id_crypte,bdd_1A_2A$annee)),]
-
-# creation boucles sortie stat par bloc annee
-bdd_1A_2A_unique$bloc_an<- ifelse(bdd_1A_2A_unique$annee %in% c(2015,2016,2017),"2015-2017",ifelse (bdd_1A_2A_unique$annee %in% c(2018,2019,2020),"2018-2020",ifelse(bdd_1A_2A_unique$annee %in% c(2021,2022),"2021-2022","2023-2024")))
 
 bdd_bloc_1A_2A <- bdd_1A_2A_unique %>%
   filter(annee_ecole %in% c("1A","2A")) %>%
@@ -56,112 +56,14 @@ bdd_bloc_1A_2A <- bdd_1A_2A_unique %>%
   ) %>%
   arrange(bloc_an, annee_ecole)
 
-# pareil mais en dissociant ingé/attaché
+# travaux sur 3A
+bdd_3A_ing <- bdd[bdd$annee_ecole=="3A" & !is.na(bdd$filiere_3A) & bdd$att_ing=="ingénieur",]
 
+#  conserver une ligne par eleve et par année
+bdd_3A_ing <- bdd_3A_ing[!duplicated(cbind(bdd_3A_ing$id_crypte,bdd_3A_ing$annee)),]
 
-# # redoublement eleves sur 10 ans
-#
-# table(bdd_1a2a$annee,bdd_1a2a$redoublement)
-# bb<-bdd[bdd$redoublement==1,]
-# for (i in 1:10) {
-#   #  i <- 3
-#
-# summarise(moy_g = mean(moyenne_generale),
-#           moy_stat = (mean(MSS1,na.rm = T)+mean(MSS2,na.rm = T))/2,
-#           moy_eco = (mean(MES1,na.rm = T)+mean(MES2,na.rm = T))/2,
-#           moy_info = (mean(MIS1,na.rm = T)+mean(MIS2,na.rm = T))/2,
-#           moy_hum =(mean(MHS1,na.rm = T)+mean(MHS2,na.rm = T))/2,
-#           nb_redoub = sum(as.numeric(redoublement))
-# )
-
-# }
-
-# 
-# # Choix 3A ingé selon filiere origine
-# 
-# # travaux sur 3A
-# bdd_3a <- bdd[bdd$annee_ecole=="3A" & !is.na(bdd$filiere_3A) & bdd$att_ing=="ingénieur",]
-# 
-# #  conserver une ligne par eleve et par année
-# bdd_3a <- bdd_3a[!duplicated(cbind(bdd_3a$id_etudiant,bdd_3a$annee)),]
-# 
-# 
-# # recoder filiere 3A pour pb sur autres et pb sur nom filiere (regroupement)
-# bdd_3a$fil_3a <- ifelse(bdd_3a$filiere_3A == "Autres" & bdd_3a$voie_lib %in% c("3A,3A GDRIF",
-#                                                                                "3A,3A GDRIF,OFPR",
-#                                                                                "3A,3A GR",
-#                                                                                "3A,3A GR,3A Ing,OFPR,T00000",
-#                                                                                "3A,3A GR,3A Ing,T00000",
-#                                                                                "3A,3A GR,3A Ing,T01850",
-#                                                                                "3A,3A GR,3A Ing,T02650",
-#                                                                                "3A,3A GR,CVEC",
-#                                                                                "3A,3A GR,CVEC,OFPR",
-#                                                                                "3A,3A GR,CVEC,OFPR,Tpoursuite",
-#                                                                                "3A,3A GR,CVEC,Tpoursuite",
-#                                                                                "3A,3A GR,OFPR"),
-#                         "GDR",
-#                         ifelse(bdd_3a$filiere_3A == "Autres" & bdd_3a$voie_lib %in% c("3A,3A Ing,3A SBio,OFPR,T00000",
-#                                                                                        "3A,3A Ing,3A SBio,OFPR,T01850",
-#                                                                                        "3A,3A Ing,3A SBio,T00000",
-#                                                                                        "3A,3A Ing,3A SBio,T01850",
-#                                                                                        "3A,3A SBio",
-#                                                                                        "3A,3A SBio,CVEC",
-#                                                                                        "3A,3A SBio,CVEC,OFPR",
-#                                                                                        "3A,3A SBio,CVEC,OFPR,Tpoursuite",
-#                                                                                        "3A,3A SBio,CVEC,Tpoursuite",
-#                                                                                        "3A,3A SBio,OFPR",
-#                                                                                        "3A,3A SBio,OFPR,Tpoursuite",
-#                                                                                        "3A,3A SBio,T00000"),
-#                                 "SBio",
-#                                ifelse(bdd_3a$filiere_3A == "M",
-#                                       "MKT",
-#                                       ifelse(bdd_3a$filiere_3A == "SV",
-#                                                    "SBio",
-#                                              ifelse(bdd_3a$filiere_3A == "ISTS",
-#                                                     "MES",
-#                                                      bdd_3a$filiere_3A)))))
-# 
-# # creation boucles sortie stat par bloc annee
-# 
-# bdd_3a$bloc_an<- ifelse(bdd_3a$annee %in% c(2015,2016,2017),
-#                               "2015-2017",
-#                               ifelse (bdd_3a$annee %in% c(2018,2019,2020),
-#                                       "2018-2020",
-#                                       ifelse(bdd_3a$annee %in% c(2021,2022),
-#                                              "2021-2022",
-#                                              "2023-2024")))
-# 
-# # recoder spe_entree pour ECO
-# bdd_3a$spe_entree <- ifelse(bdd_3a$concours_origine =="Concours externe : spécialité 'économie et sciences sociales'",
-#                               "Eco BL",
-#                               ifelse(bdd_3a$concours_origine =="concours externe : spécialité 'économie et sciences sociales'",
-#                                      "Eco BL",
-#                                      ifelse (bdd_3a$concours_origine == "Concours externe : spécialité 'économie et gestion'",
-#                                              "Eco D2",
-#                                              bdd_3a$specialite_entree)))
-# 
-# bdd_3a$spe_entree <- ifelse(bdd_3a$concours_origine =="Admission sur titres (dossier + entretien) : niveau L3",
-#                               "AST 1A",
-#                               ifelse(bdd_3a$concours_origine =="Admission sur titres (dossier + entretien) : niveau M1 ou plus, admission en 1ère année",
-#                                      "AST 1A",
-#                                      ifelse (bdd_3a$concours_origine == "Admission sur titres (dossier + entretien) : niveau M1 ou plus, admission en 2e année",
-#                                              "AST 2A",
-#                                              ifelse (bdd_3a$concours_origine == "Concours externe",
-#                                                      "ERASMUS - Contractuels",
-#                                                      ifelse (bdd_3a$concours_origine == "Contractuel",
-#                                                              "ERASMUS - Contractuels",
-#                                                              ifelse (bdd_3a$concours_origine == "Erasmus",
-#                                                                      "ERASMUS - Contractuels",
-#                                                                      bdd_3a$spe_entree))))))
-# 
-# # denombrement eleves sur 10 ans
-# 
-#   denomb_3a <- bdd_3a %>%
-#     group_by(bloc_an, spe_entree,fil_3a) %>%
-#     summarise(nb_eleves = n())
-# 
-# 
-# write.csv2(denomb_3a,"output/denomb_3a.csv")
+# recoder filiere 3A pour pb sur autres et pb sur nom filiere (regroupement)
+bdd_3A$fil_3A <- ifelse(bdd_3A$filiere_3A == "Autres" & bdd_3A$voie_lib %in% c("3A,3A GDRIF","3A,3A GDRIF,OFPR","3A,3A GR", "3A,3A GR,3A Ing,OFPR,T00000","3A,3A GR,3A Ing,T00000","3A,3A GR,3A Ing,T01850","3A,3A GR,3A Ing,T02650","3A,3A GR,CVEC","3A,3A GR,CVEC,OFPR","3A,3A GR,CVEC,OFPR,Tpoursuite","3A,3A GR,CVEC,Tpoursuite","3A,3A GR,OFPR"),"GDR",ifelse(bdd_3A$filiere_3A == "Autres" & bdd_3A$voie_lib %in% c("3A,3A Ing,3A SBio,OFPR,T00000","3A,3A Ing,3A SBio,OFPR,T01850","3A,3A Ing,3A SBio,T00000","3A,3A Ing,3A SBio,T01850","3A,3A SBio","3A,3A SBio,CVEC","3A,3A SBio,CVEC,OFPR","3A,3A SBio,CVEC,OFPR,Tpoursuite","3A,3A SBio,CVEC,Tpoursuite","3A,3A SBio,OFPR","3A,3A SBio,OFPR,Tpoursuite","3A,3A SBio,T00000"),"SBio",ifelse(bdd_3A$filiere_3A == "M","MKT",ifelse(bdd_3A$filiere_3A == "SV","SBio",ifelse(bdd_3A$filiere_3A == "ISTS","MES",bdd_3A$filiere_3A)))))
 
 ```
 
@@ -261,6 +163,104 @@ nb_eleve_par_annee %>%
   kable(format = "html", caption = "Nombre d'élèves par année - niveau - statut") %>%
   kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
                 full_width = FALSE, position = "center")
+
+```
+
+### 1.4. Nombre de redoublements par année
+
+```{r}
+
+nb_eleve_par_annee <- bdd %>% 
+  distinct(id_crypte, annee, annee_ecole, redoublement) %>%
+  count(annee, annee_ecole, redoublement) %>%                   
+  pivot_wider(
+    names_from  = annee_ecole,                    
+    values_from = n,
+    names_prefix = "nb_",
+    values_fill = 0
+  )
+
+nb_eleve_par_annee %>%
+  filter(redoublement == 1) %>% 
+  kable(format = "html", caption = "Nombre d'élèves par année - niveau - statut") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = FALSE, position = "center")
+
+```
+
+### 1.5. Nombre d'exclusions par année
+
+```{r}
+
+nb_eleve_par_annee <- bdd %>% 
+  distinct(id_crypte, annee, annee_ecole, exclusion) %>%
+  count(annee, annee_ecole, exclusion) %>%                   
+  pivot_wider(
+    names_from  = annee_ecole,                    
+    values_from = n,
+    names_prefix = "nb_",
+    values_fill = 0
+  )
+
+nb_eleve_par_annee %>%
+  filter(exclusion == 1) %>% 
+  kable(format = "html", caption = "Nombre d'élèves par année - niveau - statut") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = FALSE, position = "center")
+
+```
+
+### 1.6. Répartition des spécialisation entre troisième année
+
+
+```{r}
+
+nb_eleves_3A_ing <- bdd_3A %>% 
+  distinct(id_crypte, annee, fil_3A) %>%
+  count(annee, fil_3A) %>%                   
+  pivot_wider(
+    names_from  = fil_3A,                    
+    values_from = n,
+    names_prefix = "nb_",
+    values_fill = 0
+  )
+
+nb_eleves_3A_ing %>%
+  kable(format = "html", caption = "Nombre d'élèves par filière 3A") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = FALSE, position = "center")
+
+```
+
+```{r}
+
+# Données en format long avec % par année
+nb_eleves_3A_long <- bdd_3A %>% 
+  distinct(id_crypte, annee, fil_3A) %>%
+  count(annee, fil_3A) %>%
+  group_by(annee) %>%
+  mutate(
+    pct = 100 * n / sum(n)
+  ) %>%
+  ungroup()
+
+# Graphique empilé base 100 %
+ggplot(nb_eleves_3A_long, aes(x = factor(annee), y = pct, fill = fil_3A)) +
+  geom_col(position = "stack") +
+  geom_text(aes(label = paste0(round(pct, 1), "%")),
+            position = position_stack(vjust = 0.5), size = 3, color = "white") +
+  labs(
+    title = "Répartition des élèves par filière 3A (en %)",
+    x = "Année",
+    y = "Pourcentage",
+    fill = "Filière 3A"
+  ) +
+  scale_y_continuous(labels = function(x) paste0(x, "%")) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    axis.text.x = element_text(angle = 30, hjust = 1)
+  )
 
 ```
 

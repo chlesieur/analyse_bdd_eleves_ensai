@@ -3,6 +3,7 @@ project:
 
 
 execute:
+  jupyter: false
   echo: false
   warning: false
   message: false
