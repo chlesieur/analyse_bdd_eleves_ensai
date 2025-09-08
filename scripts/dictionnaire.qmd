@@ -17,6 +17,9 @@ execute:
 
 ```{r}
 # Chargement
+if (!requireNamespace("readxl", quietly = TRUE)) {
+  install.packages("readxl", repos = "https://cloud.r-project.org")
+}
 library(readxl)
 library(DT)
 
