@@ -8,6 +8,7 @@ execute:
   warning: false
   message: false
   execute-dir: project
+  freeze: auto 
 
 website:
   title: "Construction et analyse de la base sur les élèves de l'ENSAI"

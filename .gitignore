@@ -1,6 +1,6 @@
 /secret/
 /output/
-
+_freeze/
 
 # Basic Jekyll gitignores (synchronize to Jekyll.gitignore)
 _site/
