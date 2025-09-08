@@ -20,6 +20,10 @@ execute:
 if (!requireNamespace("readxl", quietly = TRUE)) {
   install.packages("readxl", repos = "https://cloud.r-project.org")
 }
+if (!requireNamespace("DT", quietly = TRUE)) {
+  install.packages("DT", repos = "https://cloud.r-project.org")
+}
+
 library(readxl)
 library(DT)
 

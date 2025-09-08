@@ -3,14 +3,11 @@ project:
 
 
 execute:
-  jupyter: false
   echo: false
   warning: false
   message: false
-  execute-dir: project
-  freeze: auto 
-  eval: false
-engine: knitr
+  cache: true
+  freeze: auto
 
 website:
   title: "Construction et analyse de la base sur les élèves de l'ENSAI"
