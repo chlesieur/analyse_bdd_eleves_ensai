@@ -15,7 +15,7 @@ library(knitr)
 library(kableExtra)
 library(readxl)
 
-bdd <- read_parquet("Z:/0_Direction_des_Etudes/Base élève/data/bdd_2015_2024.parquet") %>% filter(annee_ecole != "Autres")
+bdd <- read_parquet("Z:/0_Direction_des_Etudes/Base_eleve/data/bdd_2015_2024.parquet") %>% filter(annee_ecole != "Autres")
 
 # travaux sur 1A et 2A
 bdd_1A_2A <- bdd[bdd$annee_ecole %in% c("1A","2A"),]
@@ -167,7 +167,7 @@ bdd_bloc_1A_2A <- bdd_1A_2A_unique %>%
 
 ## 1. Données de cadrage
 
-### 1.1 Nombre d'étudiants par année en 1A, 2A et 3A
+### 1.1. Nombre d'étudiants par année
 
 ```{r}
 
@@ -198,7 +198,7 @@ nb_eleve_par_annee %>%
                          nb_3A = "3A")) |>
   ggplot(aes(x = factor(annee), y = effectif, fill = niveau)) +
   geom_col(position = position_dodge(width = 0.8)) +
-  geom_text(aes(label = comma(effectif)),           # comma() trouvé car scales chargé
+  geom_text(aes(label = comma(effectif)), 
             position = position_dodge(width = 0.8),
             vjust = -0.3, size = 3) +
   scale_y_continuous(expand = expansion(mult = c(0, 0.05)),
@@ -209,6 +209,58 @@ nb_eleve_par_annee %>%
        y = "Nombre d'étudiants") +
   theme_minimal(base_size = 12) +
   theme(legend.position = "top")
+
+```
+
+### 1.2. Nombre d'étudiants par sexe
+
+```{r}
+
+# Calcul des % H/F
+pct_eleve_par_annee <- bdd %>% 
+  distinct(id_crypte, annee, annee_ecole, sexe) %>%
+  count(annee, annee_ecole, sexe) %>%
+  group_by(annee, annee_ecole) %>%
+  mutate(
+    pct = round(100 * n / sum(n), 1)  # % par sexe dans chaque (année, niveau)
+  ) %>%
+  ungroup() %>%
+  select(-n) %>%  # ⬅️ on enlève les effectifs, on garde seulement les %
+  pivot_wider(
+    names_from = c(annee_ecole, sexe),
+    values_from = pct,
+    values_fill = 0
+  )
+
+# Tableau HTML avec kable
+pct_eleve_par_annee %>%
+  kable(format = "html", caption = "% d'élèves par année - niveau - sexe") %>%
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed"),
+    full_width = FALSE,
+    position = "center"
+  )
+
+```
+
+### 1.3. Nombre d'étudiants par statut
+
+```{r}
+
+nb_eleve_par_annee <- bdd %>% 
+  distinct(id_crypte, annee, annee_ecole, att_ing) %>%
+  count(annee, annee_ecole, att_ing) %>%                   
+  pivot_wider(
+    names_from  = annee_ecole,                    
+    values_from = n,
+    names_prefix = "nb_",
+    values_fill = 0
+  )
+
+nb_eleve_par_annee %>%
+  kable(format = "html", caption = "Nombre d'élèves par année - niveau - statut") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = FALSE, position = "center")
 
 ```
 

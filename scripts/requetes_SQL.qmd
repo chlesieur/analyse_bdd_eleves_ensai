@@ -12,8 +12,8 @@ format:
 ℹ️ Cette page documente les **deux requêtes SQL** nécessaires (principale & secondaire) et leur usage dans le script **`creation_BDD.R`**.
 :::
 
-[Script R – création BDD](Z:/0_Direction_des_Etudes\Base élève/analyse_bdd_eleves_ensai/scripts/creation_BDD.qmd){.button .blue-button}
-[Voir le dictionnaire des variables](Z:/0_Direction_des_Etudes\Base élève/analyse_bdd_eleves_ensai/scripts/dictionnaire.qmd){.button .green-button}
+[Script R – création BDD](Z:/0_Direction_des_Etudes\Base_eleve/analyse_bdd_eleves_ensai/scripts/creation_BDD.qmd){.button .blue-button}
+[Voir le dictionnaire des variables](Z:/0_Direction_des_Etudes\Base_eleve/analyse_bdd_eleves_ensai/scripts/dictionnaire.qmd){.button .green-button}
 
 Deux requêtes sont nécessaires pour disposer (1) des **données principales sur les notes** et (2) des **points de jury et de bonus**.  
 Le script **`creation_BDD.R`** compile ensuite les deux extractions.
@@ -26,7 +26,7 @@ Le script **`creation_BDD.R`** compile ensuite les deux extractions.
 
 # Requête principale
 
-La requête se nomme *« Scola - Extraction notes - Requête principale - Pour base élèves »*.  
+La requête se nomme *« Scola - Extraction notes - Requête principale - Pour Base_eleves »*.  
 Elle fonctionne pour toutes les années **2015–2016 à 2024–2025**.
 
 
@@ -335,7 +335,7 @@ ORDER BY
 
 # Requête secondaire
 
-La requête *« Scola - Extraction notes - Points de bonus et de jury - Pour base élèves »*  
+La requête *« Scola - Extraction notes - Points de bonus et de jury - Pour Base_eleves »*  
 récupère **les points de jury** et **les bonus**.
 
 ```{sql}

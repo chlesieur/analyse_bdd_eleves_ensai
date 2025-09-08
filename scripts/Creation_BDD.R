@@ -13,7 +13,7 @@ library(janitor)
 ######### Lecture des fichiers de la requete principale ##########
 
 # Répertoire où déposer les exports pamplemousse tels quels
-repertoire <- "Z:/0_Direction_des_Etudes/Base élève/data"
+repertoire <- "Z:/0_Direction_des_Etudes/Base_eleve/data"
 
 # Lecture automatique des exports pamplemousse
 fichiers_csv <- list.files(path = paste0(repertoire,"/export pamplemousse/requete principale"), pattern = "*.csv")
@@ -313,7 +313,7 @@ bdd_3 <- left_join(bdd_2,filieres_stephane_3A,
 
 ## patch pour rang et rang max
 
-bdd_rang <- read_parquet("Z:/0_Direction_des_Etudes/Base élève/data/20250618/bdd_2015_2024.parquet")
+bdd_rang <- read_parquet("Z:/0_Direction_des_Etudes/Base_eleve/data/20250618/bdd_2015_2024.parquet")
 
 bdd_rang_1 <- bdd_rang %>% 
   select(annee,id_etudiant,code_matiere,rang_matiere, rang_max_matiere, point_jury)
