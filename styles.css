@@ -1,13 +1,82 @@
-.green-button {
+/********************************************
+ * 1. BOUTONS COLORÉS
+ ********************************************/
+
+.button {
   display: inline-block;
-  padding: 2px 5px;
+  padding: 6px 12px;
   font-size: 14px;
+  font-weight: 600;
   color: white;
-  background-color: green;
   border: none;
-  border-radius: 12px;
+  border-radius: 8px;
   text-align: center;
   text-decoration: none;
   cursor: pointer;
   transition: background-color 0.3s ease;
+}
+
+/* Variantes */
+.green-button { background-color: #28a745; }
+.green-button:hover { background-color: #218838; }
+
+.red-button { background-color: #dc3545; }
+.red-button:hover { background-color: #b02a37; }
+
+.blue-button { background-color: #007bff; }
+.blue-button:hover { background-color: #0056b3; }
+
+.orange-button { background-color: #fd7e14; }
+.orange-button:hover { background-color: #e35d00; }
+
+
+/********************************************
+ * 2. BOÎTES D'INFO / ALERTES
+ ********************************************/
+
+.box {
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin: 1em 0;
+  color: #333;
+}
+
+/* Variantes de boîtes */
+.note {
+  background-color: #e7f3fe;
+  border-left: 5px solid #2196f3;
+}
+
+.warning {
+  background-color: #fff3cd;
+  border-left: 5px solid #ff9800;
+}
+
+.success {
+  background-color: #d4edda;
+  border-left: 5px solid #28a745;
+}
+
+.danger {
+  background-color: #f8d7da;
+  border-left: 5px solid #dc3545;
+}
+
+
+/********************************************
+ * 3. TEXTE SPÉCIAL
+ ********************************************/
+
+.highlight {
+  background-color: yellow;
+  font-weight: bold;
+}
+
+.muted {
+  color: #6c757d;
+  font-style: italic;
+}
+
+.center {
+  text-align: center;
 }

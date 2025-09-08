@@ -16,6 +16,6 @@ La base de données est constituée de :
 
 -   Données sur les admissions, notamment sur le rang aux concours d'entrée
 
--   Elle sera potentiellement enrichie d'autres sources, par exemple de données sur les parcours à la sortie de l'école, voire de données issues de Moodle si le temps permet d'ouvrir sur des question de stratégies pédagogiques (avec des analyses dans le champ des *Learning Analytics*)
+-   Elle sera potentiellement enrichie d'autres sources, par exemple de données sur les parcours à la sortie de l'école, voire de données issues de Moodle si le temps permet d'ouvrir sur des questions de stratégies pédagogiques (avec des analyses dans le champ des *Learning Analytics*)
 
 Cette démarche inédite à l'ENSAI est rendue possible par l'accès aux module de requête dans Pamplemousse depuis la fin de l'année 2024. La profondeur historique pourra éventuellement être ajustée, les données étant disponibles depuis 2010 (dans des formats différents).

@@ -1,0 +1,38 @@
+---
+title: "Démo des styles personnalisés"
+author: "Christophe Lesieur"
+---
+
+# Boutons
+
+[Requête SQL](scripts/requetes_SQL.qmd){.button .green-button}[Script R](scripts/creation_BDD.qmd){.button .blue-button}[Stop](#){.button .red-button}[Options](#){.button .orange-button}  
+
+---
+
+# Boîtes
+
+::: {.box .note}
+ℹ️ Ceci est une note explicative.
+:::
+
+::: {.box .warning}
+⚠️ Attention : données incomplètes.
+:::
+
+::: {.box .success}
+✅ Requête exécutée avec succès.
+:::
+
+::: {.box .danger}
+❌ Erreur : connexion perdue.
+:::
+
+---
+
+# Texte stylisé
+
+Ceci est un mot {.highlight} important.  
+
+Un commentaire {.muted} moins visible.  
+
+# Titre centré {.center}

@@ -1,5 +1,53 @@
 ---
-title: "dictionnaire"
-format: html
+title: "Dictionnaire des variables"
+format:
+  html:
+    theme: cosmo
+    toc: false
+    code-fold: false
+execute:
+  echo: false
+  eval: true
+  execute-dir: project
 ---
 
+::: {.box .note}
+ℹ️ Utilisez la recherche globale ou les filtres sous les en-têtes.
+:::
+
+```{r}
+# Chargement
+library(readxl)
+library(DT)
+
+chemin_dict <- file.path("..", "data", "dictionnaire.xlsx")
+dict <- readxl::read_xlsx(chemin_dict)
+
+# En-têtes lisibles
+names(dict) <- c("Variable", "Label", "Format")
+
+# Table interactive
+DT::datatable(
+  dict,
+  rownames   = FALSE,
+  filter     = "top",
+  extensions = "Buttons",
+  options = list(
+    pageLength = 25,
+    autoWidth  = TRUE,
+    dom = "Bfrtip",
+    buttons = list(
+      list(extend = "copy",  text = "Copier"),
+      list(extend = "csv",   text = "CSV"),
+      list(extend = "excel", text = "Excel"),
+      list(extend = "print", text = "Imprimer")
+    ),
+    columnDefs = list(
+      list(width = "25%", targets = 0),
+      list(width = "55%", targets = 1),
+      list(width = "20%", targets = 2)
+    )
+  ),
+  class = "stripe hover row-border"
+)
+```

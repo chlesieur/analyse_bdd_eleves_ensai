@@ -1,32 +1,36 @@
 ---
-title: "Requête SQL"
+title: "Requêtes SQL"
 author: "Christophe Lesieur"
 format:
   html:
-    theme: cosmo        # Thème bootstrap léger
-    toc: true           # Table des matières
+    theme: cosmo
+    toc: true
     number-sections: true
 ---
 
-```{css}
-#| echo: false
+::: {.box .note}
+ℹ️ Cette page documente les **deux requêtes SQL** nécessaires (principale & secondaire) et leur usage dans le script **`creation_BDD.R`**.
+:::
 
-:root {
-  font-size: 12px;      /* Police relativement petite (modifier ici si besoin) */
-}
+[Script R – création BDD](Z:/0_Direction_des_Etudes\Base élève/analyse_bdd_eleves_ensai/scripts/creation_BDD.qmd){.button .blue-button}
+[Voir le dictionnaire des variables](Z:/0_Direction_des_Etudes\Base élève/analyse_bdd_eleves_ensai/scripts/dictionnaire.qmd){.button .green-button}
 
-body {
-  font-family: "Inter", sans-serif; /* Police moderne et lisible */
-}
+Deux requêtes sont nécessaires pour disposer (1) des **données principales sur les notes** et (2) des **points de jury et de bonus**.  
+Le script **`creation_BDD.R`** compile ensuite les deux extractions.
 
-```
+::: {.box .success}
+✅ Bonnes pratiques  
+- Lancer la requête **année par année** (2015–2016 → 2024–2025) et **stocker dans un même répertoire**.  
+- Vérifier que la base active correspond bien à l’**année** cible avant exécution.
+:::
 
-# Introduction
+# Requête principale
 
-La requête se nomme "Scola - Extraction Notes. Elle fonctione sur toutes les années de 2015-2016 à 2024-2025". Il s'agit de la lancer année par année pour ensuite les compiler avec le programme "Code R.qmd"
+La requête se nomme *« Scola - Extraction notes - Requête principale - Pour base élèves »*.  
+Elle fonctionne pour toutes les années **2015–2016 à 2024–2025**.
 
-# Requête SQL
 
+```{sql}
 SELECT
     RIGHT(DATABASE(),4)                     AS annee_courante,
 
@@ -191,8 +195,8 @@ LEFT JOIN (
             e.concours_origine,
             rsp.libelle                                             AS situation_avant,
             cpge.libelle                                            AS cpge,
-            IF(IFNULL(e.type_bourse,'')='',0,1)                     AS bourse,
-            e.type_bourse                                           AS bourse_type,
+            IF(IFNULL(e.bourse_type,'')='',0,1)                     AS bourse,
+            e.bourse_type                                           AS bourse_type,
             e.bourse_montant,
             e.id_pcs_pere,
             e.id_pcs_mere,
@@ -327,3 +331,126 @@ ORDER BY
     e.id_etudiant DESC,
     m.id_module,
     m.id_matiere;
+```
+
+# Requête secondaire
+
+La requête *« Scola - Extraction notes - Points de bonus et de jury - Pour base élèves »*  
+récupère **les points de jury** et **les bonus**.
+
+```{sql}
+
+WITH voie_etud AS (
+    SELECT ve.id_etudiant
+    FROM voie_etudiant ve
+    INNER JOIN voie v ON v.id_voie = ve.id_voie
+    GROUP BY ve.id_etudiant
+),
+
+aide_reduit AS (
+    SELECT e.id_etudiant
+    FROM etudiant e
+    INNER JOIN voie_etudiant ve ON ve.id_etudiant = e.id_etudiant
+    INNER JOIN voie v ON v.id_voie = ve.id_voie
+    GROUP BY e.id_etudiant
+),
+
+moyenne_matiere AS (
+    SELECT 
+        moy.id_etudiant,
+        moy.id_matiere,
+        ROUND(moy.moyenne, 2) AS moyenne_matiere,
+        moy.note,
+        moy.rang,
+        moy.rang_max
+    FROM moyenne moy
+),
+
+moyenne_module AS (
+    SELECT 
+        mmoy.id_etudiant,
+        m.id_module,
+        ROUND(mmoy.moyenne, 2) AS moyenne_ue
+    FROM moyenne_module mmoy
+    INNER JOIN matiere m ON m.id_module = mmoy.id_module
+    WHERE mmoy.moyenne IS NOT NULL
+),
+
+matiere_module AS (
+    SELECT 
+        m.id_matiere,
+        m.id_module,
+        m.intitule      AS matiere,
+        m.code_matiere,
+        m.id_type_matiere,
+        m.bonus         AS bonus_type,
+        mo.libelle      AS ue,
+        CASE 
+            WHEN m.objectifs IS NULL OR m.objectifs LIKE '%mso-%' THEN ''
+            ELSE REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
+                 REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
+                 m.objectifs,
+                 ' ', ' '),
+                 'é', 'é'),
+                 'è', 'è'),
+                 'à', 'à'),
+                 'œ', 'œ'),
+                 'ç', 'ç'),
+                 '"', '"'),
+                 '’', '’'),
+                 '–', '–'),
+                 '&', '&'),
+                 '<', '<'),
+                 '>', '>') 
+        END AS objectifs_matiere
+    FROM matiere m
+    LEFT JOIN module mo ON mo.id_module = m.id_module
+)
+
+SELECT
+    RIGHT(DATABASE(), 4) AS annee_courante,
+
+    /* Identité */
+    e.id_etudiant,
+
+    /* Module / matière */
+    matiere.ue,
+    matiere.matiere,
+    matiere.code_matiere,
+    matiere.objectifs_matiere,
+    matiere.bonus_type,
+    matiere.id_type_matiere,
+
+    /* Bonus ou points de jury */
+    CASE
+        WHEN matiere.bonus_type > 0 OR matiere.matiere LIKE '%points de jury%' THEN mm.note
+        ELSE NULL
+    END AS point_jury,
+
+    /* Point bonus s’il y a lieu */
+    CASE 
+        WHEN matiere.bonus_type IN (1, 2) THEN mm.moyenne_matiere
+        ELSE 0
+    END AS point_bonus
+
+FROM moyenne_matiere mm
+JOIN etudiant e              ON e.id_etudiant = mm.id_etudiant
+JOIN matiere_module matiere  ON matiere.id_matiere = mm.id_matiere
+LEFT JOIN moyenne_module mmodule 
+                             ON mmodule.id_etudiant = e.id_etudiant
+                             AND mmodule.id_module = matiere.id_module
+LEFT JOIN voie_etud voie     ON voie.id_etudiant = e.id_etudiant
+LEFT JOIN aide_reduit aide   ON aide.id_etudiant = e.id_etudiant
+
+GROUP BY 
+    e.id_etudiant,
+    matiere.id_module,
+    matiere.id_matiere
+
+ORDER BY 
+    e.id_etudiant DESC,
+    matiere.id_module,
+    matiere.id_matiere;
+
+```
+

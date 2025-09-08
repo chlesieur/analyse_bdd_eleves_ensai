@@ -1,3 +1,51 @@
+---
+title: "Script R — création de la BDD élèves"
+author: "Christophe Lesieur"
+format:
+  html:
+    theme: cosmo
+    toc: true
+    number-sections: true
+    code-copy: true
+    code-fold: show
+execute:
+  echo: true      # montre le code
+  eval: false     # NE JAMAIS exécuter (y compris les inlines)
+  warning: false
+  message: false
+  cache: false
+---
+
+```{r}
+#| label: setup-no-eval
+#| include: false
+knitr::opts_chunk$set(eval = FALSE, echo = TRUE)
+```
+
+::: {.box .note}
+ℹ️ Cette page documente le **script creation_BDD.R** à faire tourner après avoir exécuté les requêtes SQL dans Pamplemousse. Ce script crée les bases de données et les exporte en quatre format (parquet, xlsx, csv, rds). Il permet également de créer le *dictionnaire des variables*.
+:::
+
+[Requêtes SQL](Z:/0_Direction_des_Etudes\Base élève/analyse_bdd_eleves_ensai/scripts/requetes_SQL.qmd){.button .blue-button}
+[Voir le dictionnaire des variables](Z:/0_Direction_des_Etudes\Base élève/analyse_bdd_eleves_ensai/scripts/dictionnaire.qmd){.button .green-button}
+
+# Présentation du script
+
+Le script **creation_BDD.R** lit les fichiers quel que soit le nommage, il n'est pas nécessaire de renommer les bases issues de pamplemousse. Il nettoie les variables, en crée, et leur attribue des labels. 
+
+Il compile les bases issues de la requête principale sur les notes des élèves et celles issues de la requête secondaire permettant d'accéder aux points de bonus et de jury. Il permet aussi de réaliser une fusion avec les fichiers d'admission afin d'obtenir entre autres les rangs d'admission aux concours.
+
+::: {.box .success}
+✅ Bonnes pratiques  
+- Avoir lancé les requêtes **année par année** (2015–2016 → 2024–2025) et **stocké les bases dans un même répertoire**.  
+:::
+
+# Script *creation_BDD.R*
+
+```{r}
+#| eval: false
+#| echo: true
+
 library(purrr)
 library(dplyr)
 library(stringr)
@@ -39,9 +87,7 @@ for (fichier in fichiers_csv_tries) {
 
 # Vérification de doublons
 bdd <- bdd %>%
-  distinct(X.annee_courante, X.id_etudiant, X.code_matiere, .keep_all = TRUE) %>% 
-  filter(X.moyenne_generale != "=") %>% 
-  filter(!str_detect(X.voie_lib, regex("ERASMUS", ignore_case = TRUE)))
+  distinct(X.annee_courante, X.id_etudiant, X.code_matiere, .keep_all = TRUE)
 
 ######### Lecture des fichiers de la requete points bonus et jury ##########
 
@@ -313,7 +359,7 @@ bdd_3 <- left_join(bdd_2,filieres_stephane_3A,
 
 ## patch pour rang et rang max
 
-bdd_rang <- read_parquet("Z:/0_Direction_des_Etudes/Base élève/data/20250618/bdd_2015_2024.parquet")
+bdd_rang <- read_parquet("Z:/0_Direction_des_Etudes/Base élève/analyse_bdd_eleves_ensai/data/20250618/bdd_2015_2024.parquet")
 
 bdd_rang_1 <- bdd_rang %>% 
   select(annee,id_etudiant,code_matiere,rang_matiere, rang_max_matiere, point_jury)
@@ -366,56 +412,9 @@ bdd_4 <- numeriser(
 bdd_4 <- bdd_4 %>% arrange(desc(annee), voie_lib, nom) %>% 
   rename(annee=annee) %>% 
   select(-c("situation","X","rattrapage_max", "RES1", "RHS1", "RIS1", "RSS1",
-            "RES2", "RHS2", "RIS2", "RSS2","nom","prenom","redoublement"))
+            "RES2", "RHS2", "RIS2", "RSS2","nom","prenom"))
 
-#########  Création des variables redoublement et exclusion_demission 
-######### Elles  ne sont pas bien renseignées dans Pamlemousse ############
 
-niveaux <- c("1A","2A","3A")
-
-# Base : uniquement les années 1A/2A/3A
-base <- bdd_4 %>%
-  filter(annee_ecole %in% niveaux) %>%
-  mutate(
-    annee       = as.integer(annee),
-    annee_ecole = factor(annee_ecole, levels = niveaux)
-  ) %>%
-  distinct(id_etudiant, annee, annee_ecole, .keep_all = TRUE)
-
-# Indicateurs par étudiant
-indicateurs <- base %>%
-  group_by(id_etudiant) %>%
-  summarise(
-    redoublement       = as.integer(any(id_commentaire_bulletin_ref == 4)),
-    redoublement_annee = paste(sort(unique(annee_ecole[id_commentaire_bulletin_ref == 4])),
-                               collapse = ", "),
-    
-    demission          = as.integer(any(id_commentaire_bulletin_ref == 3)),
-    demission_annee    = paste(sort(unique(annee_ecole[id_commentaire_bulletin_ref == 3])),
-                               collapse = ", "),
-    
-    exclusion          = as.integer(any(id_commentaire_bulletin_ref == 2)),
-    exclusion_annee    = paste(sort(unique(annee_ecole[id_commentaire_bulletin_ref == 2])),
-                               collapse = ", "),
-    
-    .groups = "drop"
-  ) %>%
-  mutate(
-    redoublement_annee = na_if(redoublement_annee, ""),
-    demission_annee    = na_if(demission_annee, ""),
-    exclusion_annee    = na_if(exclusion_annee, "")
-  )
-
-# Résultat final : une ligne par étudiant
-base_final <- base %>%
-  distinct(id_etudiant) %>%
-  left_join(indicateurs, by = "id_etudiant")
-
-table(base_final$redoublement)
-table(base_final$demission)
-table(base_final$exclusion)
-
-bdd_7 <- left_join(bdd_4, base_final, by = "id_etudiant")
 
 ## Anonymisation
 
@@ -446,22 +445,22 @@ decrypt_id <- function(enc_vector, cle) {
 
 
 # Chiffrement
-bdd_7$id_crypte <- encrypt_id(bdd_7$id_etudiant, cle_secrete)
+bdd_4$id_crypte <- encrypt_id(bdd_4$id_etudiant, cle_secrete)
 
-bdd_7 <- bdd_7 %>% 
+bdd_4 <- bdd_4 %>% 
   select(-id_etudiant)
 
 # Déchiffrement
-#bdd_7$id_decrypte <- decrypt_id(bdd_7$id_crypte, cle_secrete)
+#bdd_4$id_decrypte <- decrypt_id(bdd_4$id_crypte, cle_secrete)
 
 #  Vérification
-print(bdd_7)
-print(all(bdd_7$id_etudiant == bdd_7$id_decrypte))  # Doit afficher TRUE
+print(bdd_4)
+print(all(bdd_4$id_etudiant == bdd_4$id_decrypte))  # Doit afficher TRUE
 
 # Ajout de variables
 
 # recoder spe_entree pour maths
-bdd_7 <- bdd_7 %>%
+bdd_4 <- bdd_4 %>%
   mutate(spe_entree = case_when(
     grepl("mpi|mp2i|math[\\s\\-]*phys[\\s\\-]*info", etab_origine_formation, ignore.case = TRUE) ~ "MPI",
     grepl("pc|ps", etab_origine_formation, ignore.case = TRUE) ~ "PC/PSI",
@@ -471,147 +470,137 @@ bdd_7 <- bdd_7 %>%
   ))
 
 # recoder spe_entree pour ECO
-bdd_7$spe_entree <- ifelse(bdd_7$concours_origine =="Concours externe : spécialité 'économie et sciences sociales'",
+bdd_4$spe_entree <- ifelse(bdd_4$concours_origine =="Concours externe : spécialité 'économie et sciences sociales'",
                            "Eco BL", 
-                           ifelse(bdd_7$concours_origine =="concours externe : spécialité 'économie et sciences sociales'",
+                           ifelse(bdd_4$concours_origine =="concours externe : spécialité 'économie et sciences sociales'",
                                   "Eco BL",
-                                  ifelse (bdd_7$concours_origine == "Concours externe : spécialité 'économie et gestion'",
+                                  ifelse (bdd_4$concours_origine == "Concours externe : spécialité 'économie et gestion'",
                                           "Eco D2",
-                                          bdd_7$spe_entree)))
+                                          bdd_4$spe_entree)))
 
 # recoder spe_entree pour Autres
-bdd_7$spe_entree <- ifelse(bdd_7$concours_origine =="Admission sur titres (dossier + entretien) : niveau L3",
-                           "AST 1A", 
-                           ifelse(bdd_7$concours_origine =="Admission sur titres (dossier + entretien) : niveau M1 ou plus, admission en 1ère année",
-                                  "AST 1A",
-                                  ifelse (bdd_7$concours_origine == "Admission sur titres (dossier + entretien) : niveau M1 ou plus, admission en 2e année",
-                                          "AST 2A",
-                                          ifelse (bdd_7$concours_origine == "Concours externe",
-                                                  "ERASMUS - Contractuels",
-                                                  ifelse (bdd_7$concours_origine == "Contractuel",
-                                                          "ERASMUS - Contractuels",
-                                                          ifelse (bdd_7$concours_origine == "Erasmus",
-                                                                  "ERASMUS - Contractuels",
-                                                                  bdd_7$spe_entree))))))
+bdd_4$spe_entree <- ifelse(bdd_4$concours_origine =="Admission sur titres (dossier + entretien) : niveau L3",
+                              "AST 1A", 
+                              ifelse(bdd_4$concours_origine =="Admission sur titres (dossier + entretien) : niveau M1 ou plus, admission en 1ère année",
+                                     "AST 1A",
+                                     ifelse (bdd_4$concours_origine == "Admission sur titres (dossier + entretien) : niveau M1 ou plus, admission en 2e année",
+                                             "AST 2A",
+                                             ifelse (bdd_4$concours_origine == "Concours externe",
+                                                     "ERASMUS - Contractuels",
+                                                     ifelse (bdd_4$concours_origine == "Contractuel",
+                                                             "ERASMUS - Contractuels",
+                                                             ifelse (bdd_4$concours_origine == "Erasmus",
+                                                                     "ERASMUS - Contractuels",
+                                                                     bdd_4$spe_entree))))))
 
-table(bdd_7$spe_entree)
+table(bdd_4$spe_entree)
 
 # Il s'agit de continuer d'affiner à partir de tous les cas possibles
-sort(table(bdd_7$etab_origine_formation), decreasing = TRUE)
+sort(table(bdd_4$etab_origine_formation), decreasing = TRUE)
 
 # Prépa étoile
 
-bdd_7 <- bdd_7 %>%
+bdd_4 <- bdd_4 %>%
   mutate(prepa_etoile = case_when(
     grepl("\\*", etab_origine_formation, ignore.case = TRUE) ~ 1,
     TRUE ~ 0
   ))
 
-# creation des blocs annuels
-bdd_7$bloc_an<- ifelse(bdd_7$annee %in% c(2015,2016,2017),
-                              "2015-2017",
-                              ifelse (bdd_7$annee %in% c(2018,2019,2020),
-                                      "2018-2020",
-                                      ifelse(bdd_7$annee %in% c(2021,2022),
-                                             "2021-2022",
-                                             "2023-2024")))
+table(bdd_4$prepa_etoile)
 
 # Export en csv
-write.csv2(bdd_7, "data/bdd_2015_2024.csv", row.names = FALSE)
+write.csv2(bdd_4, "data/bdd_2015_2024.csv", row.names = FALSE)
 
 # Export en xlsx
-write_xlsx(bdd_7, path = "data/bdd_2015_2024.xlsx")
+write_xlsx(bdd_4, path = "data/bdd_2015_2024.xlsx")
 
 # Export en parquet
-write_parquet(bdd_7,"data/bdd_2015_2024.parquet")
+write_parquet(bdd_4,"data/bdd_2015_2024.parquet")
 
 # Export en RDS
-write_rds(bdd_7, "data/bdd_2015_2024.rds")
+write_rds(bdd_4, "data/bdd_2015_2024.rds")
 
 # Dictionnaire des variables
 
 # Labels pour création d'un dictionnaire
-bdd_7$annee_scolaire <- structure(bdd_7$annee_scolaire, label = "Année de scolarité")
-bdd_7$id_crypte <- structure(bdd_7$id_crypte , label = "Identifiant crypté de l'étudiant")
-bdd_7$sexe <- structure(bdd_7$sexe, label = "Sexe de l'étudiant")
-bdd_7$nationalite <- structure(bdd_7$nationalite, label = "Nationalité de l'étudiant")
-bdd_7$id_nationalite <- structure(bdd_7$id_nationalite, label = "Identifiant de la nationalité de l'étudiant")
-bdd_7$paysnai <- structure(bdd_7$paysnai, label = "Pays de naissance de l'étudiant")
-bdd_7$etab_origine_formation <- structure(bdd_7$etab_origine_formation, label = "Type d'établissement d'origine de l'étudiant")
-bdd_7$concours_origine <- structure(bdd_7$concours_origine, label = "Concours d'origine de l'étudiant")
-bdd_7$concours_annee <- structure(bdd_7$concours_annee, label = "Année d'entrée à l'Ensai de l'étudiant")
-bdd_7$bac_annee <- structure(bdd_7$bac_annee, label = "Année d'obtention du bac de l'étudiant")
-bdd_7$bac_mention <- structure(bdd_7$bac_mention, label = "Mention au bac de l'étudiant")
-bdd_7$toeic <- structure(bdd_7$toeic, label = "Score au Toeic ")
-bdd_7$annee_ecole <- structure(bdd_7$annee_ecole, label = "Niveau/Année dans l'école (1A-2A-3A)")
-bdd_7$statut_etudiant <- structure(bdd_7$statut_etudiant, label = "Statut de l'étudiant")
-bdd_7$voie_entree <- structure(bdd_7$voie_entree, label = "Voie d'entrée à l'Ensai")
-bdd_7$specialite_entree <- structure(bdd_7$specialite_entree, label = "Spécialité à l'entrée à l'Ensai")
-bdd_7$filiere_1A <- structure(bdd_7$filiere_1A, label = "Filière en 1ère année à l'Ensai")
-bdd_7$filiere_2A <- structure(bdd_7$filiere_2A, label = "Filière en 2ème année à l'Ensai")
-bdd_7$filiere_3A <- structure(bdd_7$filiere_3A, label = "Filière en 3ème année à l'Ensai")
-bdd_7$id_type_matiere <- structure(bdd_7$id_type_matiere, label = "Identifiant de la matière")
-bdd_7$cat_matiere <- structure(bdd_7$cat_matiere, label = "Catégorie de la matière")
-bdd_7$code_matiere <- structure(bdd_7$code_matiere, label = "Code de la matière")
-bdd_7$matiere <- structure(bdd_7$matiere, label = "Nom de la matière")
-bdd_7$ue <- structure(bdd_7$ue, label = "Nom de l'UE de la matière")
-bdd_7$moyenne_matiere <- structure(bdd_7$moyenne_matiere, label = "Note moyenne de l'étudiant à la matière")
-bdd_7$moyenne_ue <- structure(bdd_7$moyenne_ue, label = "Note moyenne de l'étudiant à l'a matière'UE")
-bdd_7$voie_lib <- structure(bdd_7$voie_lib, label = "Libellé long de la voie d'appartenance")
-bdd_7$rang_matiere <- structure(bdd_7$voie_lib, label = "Rang dans la matière")
-bdd_7$rang_max_matiere <- structure(bdd_7$voie_lib, label = "Rang max dans la matière")
-bdd_7$moyenne_generale <- structure(bdd_7$voie_lib, label = "Moyenne générale sur l'année")
-bdd_7$total_coeff <- structure(bdd_7$voie_lib, label = "Coefficient de la matière")
-bdd_7$total_ects <- structure(bdd_7$total_ects, label = "Crédits ECTS de la matière")
-bdd_7$filiere_3Abis <- structure(bdd_7$filiere_3Abis, label = "Filière en 3ème année à l'Ensai revue par Stéphane")
-bdd_7$toeic <- structure(bdd_7$toeic, label = "Score au Toeic")
-bdd_7$annee <- structure(bdd_7$annee, label = "Année en cours")
-bdd_7$libelle_etat_civil <- structure(bdd_7$libelle_etat_civil, label = "État civil")
-bdd_7$id_ref_paysnai <- structure(bdd_7$id_ref_paysnai, label = "Identifiant du pays de naissance de l'étudiant")
-bdd_7$libelle_statut_etudiant <- structure(bdd_7$libelle_statut_etudiant, label = "Statut de l'étudiant")
-bdd_7$libelle_statut_etudiant <- structure(bdd_7$libelle_statut_etudiant, label = "Statut de l'étudiant")
-bdd_7$certif_anglais_org <- structure(bdd_7$certif_anglais_org, label = "Organisme de certification du niveau d'anglais")
-bdd_7$certif_anglais_score<- structure(bdd_7$certif_anglais_score, label = "Score du certificat du niveau d'anglais")
-bdd_7$date_naissance <- structure(bdd_7$date_naissance, label = "Date de naissance")
-bdd_7$double_diplome <- structure(bdd_7$double_diplome, label = "Douple diplôme")
-bdd_7$autre_diplome <- structure(bdd_7$autre_diplome, label = "Autre diplôme")
-bdd_7$att_ing <- structure(bdd_7$att_ing, label = "Attaché ou Ingénieur")
-bdd_7$bac_spe1 <- structure(bdd_7$bac_spe1, label = "Spécialité de bac 1")
-bdd_7$bac_spe2 <- structure(bdd_7$bac_spe2, label = "Spécialité de bac 2")
-bdd_7$cpge <- structure(bdd_7$cpge, label = "Type de classe prépa")
-bdd_7$bourse <- structure(bdd_7$bourse, label = "Boursier")
-bdd_7$bourse_type <- structure(bdd_7$bourse_type, label = "Type de bourse")
-bdd_7$bourse_montant <- structure(bdd_7$bourse_montant, label = "Montant de la bourse")
-bdd_7$id_pcs_pere <- structure(bdd_7$id_pcs_pere, label = "Identifiant PCS du père")
-bdd_7$id_pcs_mere <- structure(bdd_7$id_pcs_mere, label = "Identifiant PCS de la mère")
-bdd_7$MES1 <- structure(bdd_7$MES1, label = "Moyenne Économie S1")
-bdd_7$MHS1 <- structure(bdd_7$MHS1, label = "Moyenne Humanités S1")
-bdd_7$MSS1 <- structure(bdd_7$MSS1, label = "Moyenne Statistique S1")
-bdd_7$MIS1 <- structure(bdd_7$MIS1, label = "Moyenne Informatique S1")
-bdd_7$MES2 <- structure(bdd_7$MES2, label = "Moyenne Économie S2")
-bdd_7$MHS2 <- structure(bdd_7$MHS2, label = "Moyenne Humanités S2")
-bdd_7$MSS2 <- structure(bdd_7$MSS2, label = "Moyenne Statistique S2")
-bdd_7$MIS2 <- structure(bdd_7$MIS2, label = "Moyenne Informatique S2")
-bdd_7$MGS1 <- structure(bdd_7$MGS1, label = "Moyenne Générale S1")
-bdd_7$MGS2 <- structure(bdd_7$MGS2, label = "Moyenne Générale S2")
-bdd_7$AV <- structure(bdd_7$MGS2, label = "Année validée")
-bdd_7$point_bonus <- structure(bdd_7$point_bonus, label = "Point de bonus")
-bdd_7$point_jury <- structure(bdd_7$point_jury, label = "Point de jury")
-bdd_7$objectifs_matiere <- structure(bdd_7$objectifs_matiere, label = "Commentaire matière dont explication point de bonus")
-bdd_7$commentaire <- structure(bdd_7$commentaire, label = "Commentaire sur la décision de validation de l'année")
-bdd_7$bonus_type <- structure(bdd_7$bonus_type, label = "type de bonus (à déterminer)")
-bdd_7$id_commentaire_bulletin_ref <- structure(bdd_7$id_commentaire_bulletin_ref, label = "Décision de validation (cf table table_bulletin_ref_id_bonus)")
-bdd_7$verrou <- structure(bdd_7$verrou, label = "Variable récupérée dans commentaire (à déterminer)")
-bdd_7$id_crypte <- structure(bdd_7$id_crypte, label = "Identifiant crypté de l'étudiant")
-bdd_7$ccc_ran_com <- structure(bdd_7$ccc_ran_com, label = "Classement au concours commun mathématiques")
-bdd_7$spe_entree <- structure(bdd_7$spe_entree, label = "Spécialité à l'entrée")
-bdd_7$prepa_etoile <- structure(bdd_7$prepa_etoile, label = "Provenance d'une prépa étoile")
-bdd_7$redoublement <- structure(bdd_7$redoublement, label = "Redoublement")
-bdd_7$redoublement_annee <- structure(bdd_7$redoublement_annee, label = "Année(s) de redoublement")
-bdd_7$demission <- structure(bdd_7$demission, label = "Démission de l'étudiant")
-bdd_7$demission_annee <- structure(bdd_7$demission_annee, label = "Année de démission de l'étudiant")
-bdd_7$exclusion <- structure(bdd_7$exclusion, label = "Exclusion de l'étudiant")
-bdd_7$exclusion_annee <- structure(bdd_7$exclusion_annee, label = "Année d'exclusion de l'étudiant")
+bdd_4$annee_scolaire <- structure(bdd_4$annee_scolaire, label = "Année de scolarité")
+bdd_4$id_crypte <- structure(bdd_4$id_crypte , label = "Identifiant crypté de l'étudiant")
+bdd_4$sexe <- structure(bdd_4$sexe, label = "Sexe de l'étudiant")
+bdd_4$nationalite <- structure(bdd_4$nationalite, label = "Nationalité de l'étudiant")
+bdd_4$id_nationalite <- structure(bdd_4$id_nationalite, label = "Identifiant de la nationalité de l'étudiant")
+bdd_4$paysnai <- structure(bdd_4$paysnai, label = "Pays de naissance de l'étudiant")
+bdd_4$etab_origine_formation <- structure(bdd_4$etab_origine_formation, label = "Type d'établissement d'origine de l'étudiant")
+bdd_4$concours_origine <- structure(bdd_4$concours_origine, label = "Concours d'origine de l'étudiant")
+bdd_4$concours_annee <- structure(bdd_4$concours_annee, label = "Année d'entrée à l'Ensai de l'étudiant")
+bdd_4$bac_annee <- structure(bdd_4$bac_annee, label = "Année d'obtention du bac de l'étudiant")
+bdd_4$bac_mention <- structure(bdd_4$bac_mention, label = "Mention au bac de l'étudiant")
+bdd_4$toeic <- structure(bdd_4$toeic, label = "Score au Toeic ")
+bdd_4$annee_ecole <- structure(bdd_4$annee_ecole, label = "Niveau/Année dans l'école (1A-2A-3A)")
+bdd_4$statut_etudiant <- structure(bdd_4$statut_etudiant, label = "Statut de l'étudiant")
+bdd_4$voie_entree <- structure(bdd_4$voie_entree, label = "Voie d'entrée à l'Ensai")
+bdd_4$specialite_entree <- structure(bdd_4$specialite_entree, label = "Spécialité à l'entrée à l'Ensai")
+bdd_4$filiere_1A <- structure(bdd_4$filiere_1A, label = "Filière en 1ère année à l'Ensai")
+bdd_4$filiere_2A <- structure(bdd_4$filiere_2A, label = "Filière en 2ème année à l'Ensai")
+bdd_4$filiere_3A <- structure(bdd_4$filiere_3A, label = "Filière en 3ème année à l'Ensai")
+bdd_4$id_type_matiere <- structure(bdd_4$id_type_matiere, label = "Identifiant de la matière")
+bdd_4$cat_matiere <- structure(bdd_4$cat_matiere, label = "Catégorie de la matière")
+bdd_4$code_matiere <- structure(bdd_4$code_matiere, label = "Code de la matière")
+bdd_4$matiere <- structure(bdd_4$matiere, label = "Nom de la matière")
+bdd_4$ue <- structure(bdd_4$ue, label = "Nom de l'UE de la matière")
+bdd_4$moyenne_matiere <- structure(bdd_4$moyenne_matiere, label = "Note moyenne de l'étudiant à la matière")
+bdd_4$moyenne_ue <- structure(bdd_4$moyenne_ue, label = "Note moyenne de l'étudiant à l'a matière'UE")
+bdd_4$voie_lib <- structure(bdd_4$voie_lib, label = "Libellé long de la voie d'appartenance")
+bdd_4$rang_matiere <- structure(bdd_4$voie_lib, label = "Rang dans la matière")
+bdd_4$rang_max_matiere <- structure(bdd_4$voie_lib, label = "Rang max dans la matière")
+bdd_4$moyenne_generale <- structure(bdd_4$voie_lib, label = "Moyenne générale sur l'année")
+bdd_4$total_coeff <- structure(bdd_4$voie_lib, label = "Coefficient de la matière")
+bdd_4$total_ects <- structure(bdd_4$total_ects, label = "Crédits ECTS de la matière")
+bdd_4$filiere_3Abis <- structure(bdd_4$filiere_3Abis, label = "Filière en 3ème année à l'Ensai revue par Stéphane")
+bdd_4$toeic <- structure(bdd_4$toeic, label = "Score au Toeic")
+bdd_4$annee <- structure(bdd_4$annee, label = "Année en cours")
+bdd_4$libelle_etat_civil <- structure(bdd_4$libelle_etat_civil, label = "État civil")
+bdd_4$id_ref_paysnai <- structure(bdd_4$id_ref_paysnai, label = "Identifiant du pays de naissance de l'étudiant")
+bdd_4$libelle_statut_etudiant <- structure(bdd_4$libelle_statut_etudiant, label = "Statut de l'étudiant")
+bdd_4$libelle_statut_etudiant <- structure(bdd_4$libelle_statut_etudiant, label = "Statut de l'étudiant")
+bdd_4$certif_anglais_org <- structure(bdd_4$certif_anglais_org, label = "Organisme de certification du niveau d'anglais")
+bdd_4$certif_anglais_score<- structure(bdd_4$certif_anglais_score, label = "Score du certificat du niveau d'anglais")
+bdd_4$date_naissance <- structure(bdd_4$date_naissance, label = "Date de naissance")
+bdd_4$double_diplome <- structure(bdd_4$double_diplome, label = "Douple diplôme")
+bdd_4$autre_diplome <- structure(bdd_4$autre_diplome, label = "Autre diplôme")
+bdd_4$redoublement <- structure(bdd_4$redoublement, label = "Redoublement")
+bdd_4$att_ing <- structure(bdd_4$att_ing, label = "Attaché ou Ingénieur")
+bdd_4$bac_spe1 <- structure(bdd_4$bac_spe1, label = "Spécialité de bac 1")
+bdd_4$bac_spe2 <- structure(bdd_4$bac_spe2, label = "Spécialité de bac 2")
+bdd_4$cpge <- structure(bdd_4$cpge, label = "Type de classe prépa")
+bdd_4$bourse <- structure(bdd_4$bourse, label = "Boursier")
+bdd_4$bourse_type <- structure(bdd_4$bourse_type, label = "Type de bourse")
+bdd_4$bourse_montant <- structure(bdd_4$bourse_montant, label = "Montant de la bourse")
+bdd_4$id_pcs_pere <- structure(bdd_4$id_pcs_pere, label = "Identifiant PCS du père")
+bdd_4$id_pcs_mere <- structure(bdd_4$id_pcs_mere, label = "Identifiant PCS de la mère")
+bdd_4$MES1 <- structure(bdd_4$MES1, label = "Moyenne Économie S1")
+bdd_4$MHS1 <- structure(bdd_4$MHS1, label = "Moyenne Humanités S1")
+bdd_4$MSS1 <- structure(bdd_4$MSS1, label = "Moyenne Statistique S1")
+bdd_4$MIS1 <- structure(bdd_4$MIS1, label = "Moyenne Informatique S1")
+bdd_4$MES2 <- structure(bdd_4$MES2, label = "Moyenne Économie S2")
+bdd_4$MHS2 <- structure(bdd_4$MHS2, label = "Moyenne Humanités S2")
+bdd_4$MSS2 <- structure(bdd_4$MSS2, label = "Moyenne Statistique S2")
+bdd_4$MIS2 <- structure(bdd_4$MIS2, label = "Moyenne Informatique S2")
+bdd_4$MGS1 <- structure(bdd_4$MGS1, label = "Moyenne Générale S1")
+bdd_4$MGS2 <- structure(bdd_4$MGS2, label = "Moyenne Générale S2")
+bdd_4$AV <- structure(bdd_4$MGS2, label = "Année validée")
+bdd_4$point_bonus <- structure(bdd_4$point_bonus, label = "Point de bonus")
+bdd_4$point_jury <- structure(bdd_4$point_jury, label = "Point de jury")
+bdd_4$objectifs_matiere <- structure(bdd_4$objectifs_matiere, label = "Commentaire matière dont explication point de bonus")
+bdd_4$commentaire <- structure(bdd_4$commentaire, label = "Commentaire sur la décision de validation de l'année")
+bdd_4$bonus_type <- structure(bdd_4$bonus_type, label = "type de bonus (à déterminer)")
+bdd_4$id_commentaire_bulletin_ref <- structure(bdd_4$id_commentaire_bulletin_ref, label = "Décision de validation (cf table table_bulletin_ref_id_bonus)")
+bdd_4$verrou <- structure(bdd_4$verrou, label = "Variable récupérée dans commentaire (à déterminer)")
+bdd_4$id_crypte <- structure(bdd_4$id_crypte, label = "Identifiant crypté de l'étudiant")
+bdd_4$ccc_ran_com <- structure(bdd_4$ccc_ran_com, label = "Classement au concours commun mathématiques")
+bdd_4$spe_entree <- structure(bdd_4$spe_entree, label = "Spécialité à l'entrée")
+bdd_4$prepa_etoile <- structure(bdd_4$prepa_etoile, label = "Provenance d'une prépa étoile")
+
+
 
 # Fabrication du dictionnaire
 dictionnaire_labels <- function(df) {
@@ -622,6 +611,13 @@ dictionnaire_labels <- function(df) {
   )
 }
 
-dict <- dictionnaire_labels(bdd_7)
+dict <- dictionnaire_labels(bdd_4)
 
 write_xlsx(dict, path = "data/dictionnaire.xlsx")
+
+
+
+```
+
+
+

@@ -1,8 +1,12 @@
 project:
   type: website
-  
+
+
 execute:
   echo: false
+  warning: false
+  message: false
+  execute-dir: project
 
 website:
   title: "Construction et analyse de la base sur les élèves de l'ENSAI"
@@ -16,9 +20,9 @@ website:
         href: "scripts/analyses_2015_2024.qmd"
       - text: "Documentation"
         menu:
-          - text: "Requête SQL"
-            href: "scripts/requete_SQL.qmd"
-          - text: "Scripts R"
+          - text: "Requêtes SQL"
+            href: "scripts/requetes_SQL.qmd"
+          - text: "Script R"
             href: "scripts/creation_BDD.qmd"
           - text: "Dictionnaire des variables"
             href: "scripts/dictionnaire.qmd"
@@ -28,7 +32,7 @@ website:
 
   # Sidebar (plan du site) à gauche
   sidebar:
-    style: "docked"        # alternatives: "floating", "docked"
+    style: "docked"
     search: true
     collapse-level: 1
     contents:
@@ -38,9 +42,9 @@ website:
         file: "scripts/analyses_2015_2024.qmd"
       - section: "Documentation"
         contents:
-          - text: "Requête SQL"
-            file: "scripts/requete_SQL.qmd"
-          - text: "Scripts R"
+          - text: "Requêtes SQL"
+            file: "scripts/requetes_SQL.qmd"
+          - text: "Script R"
             file: "scripts/creation_BDD.qmd"
           - text: "Dictionnaire des variables"
             file: "scripts/dictionnaire.qmd"
@@ -51,7 +55,6 @@ format:
       light: cosmo
       dark: solar
     css: styles.css
-    # (Optionnel) TOC de chaque page, affichée à gauche
     toc: true
     toc-location: left
     toc-depth: 3
