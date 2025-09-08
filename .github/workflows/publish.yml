@@ -29,7 +29,7 @@ jobs:
       # 5. Installe les packages R nécessaires
       - name: Install R packages
         run: |
-          Rscript -e 'install.packages(c("dplyr","ggplot2","readr","tidyr","forcats","arrow","scales","knitr","kableExtra","readxl"))'
+          Rscript -e 'install.packages(c("dplyr","ggplot2","readr","tidyr","forcats","arrow","scales","knitr","kableExtra","readxl","DT"))'
 
       # 6. Compile le site
       - name: Render site
