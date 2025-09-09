@@ -1,89 +1,49 @@
 /secret/
 /output/
-_freeze/
+/_freeze/
+.quarto/
 
-# Basic Jekyll gitignores (synchronize to Jekyll.gitignore)
-_site/
-.sass-cache/
-.jekyll-cache/
-.jekyll-metadata
-
-# Additional Ruby/bundler ignore for when you run: bundle install
-/vendor
-
-# Specific ignore for GitHub Pages
-# GitHub Pages will always use its own deployed version of pages-gem
-# This means GitHub Pages will NOT use your Gemfile.lock and therefore it is
-# counterproductive to check this file into the repository.
-# Details at https://github.com/github/pages-gem/issues/768
-Gemfile.lock
-
-/.quarto/
-.Rproj.user
-
+# ---- R ----
 .Rhistory
-
-#
-*.csv
-*.xlsx
-*.odt
-*.xls
-*.zip
-*.7
-export pamplemouse/
-bdd/
-
-# History files
-.Rhistory
-.Rapp.history
-
-# Session Data files
 .RData
-.RDataTmp
-
-# User-specific files
 .Ruserdata
-
-# Example code in package build process
-*-Ex.R
-
-# Output files from R CMD build
-/*.tar.gz
-
-# Output files from R CMD check
-/*.Rcheck/
-
-# RStudio files
 .Rproj.user/
 
-# produced vignettes
-vignettes/*.html
-vignettes/*.pdf
-
-# OAuth2 token, see https://github.com/hadley/httr/releases/tag/v0.3
-.httr-oauth
-
-# knitr and R markdown default cache directories
+# ---- Caches R Markdown / Quarto ----
 *_cache/
-/cache/
+.cache/
+*_files/
 
-# Temporary files created by R markdown
-*.utf8.md
-*.knit.md
+# ---- Quarto ----
+_site/
+*.html
+*.pdf
+*.docx
 
-# R Environment Variables
-.Renviron
+# ---- renv ----
+renv/library/
+renv/staging/
+# Garder renv.lock et renv/settings.json
 
-# pkgdown site
-docs/
+# ---- OS ----
+Thumbs.db
+Desktop.ini
+.DS_Store
 
-# translation temp files
-po/*~
-
-# RStudio Connect folder
-rsconnect
-
+# ---- Données locales ----
 data/
+data_local/
+*.parquet
+*.csv
+*.xlsx
+*.rds
 
+# ---- IDE ----
+.vscode/
+.idea/
 
+# ---- Divers ----
+logs/
+
+/.quarto/
 **/*.quarto_ipynb

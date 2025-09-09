@@ -32,7 +32,7 @@ lapply(pkgs, library, character.only = TRUE)
 
 
 ```{r}
-dict <- read_parquet(here("data","dictionnaire.parquet"))
+dict <- read_parquet(here("dictionnaire","dictionnaire.parquet"))
 
 # En-têtes lisibles
 names(dict) <- c("Variable", "Label", "Format")
