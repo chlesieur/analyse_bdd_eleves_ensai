@@ -5,16 +5,19 @@ format: html
 
 ```{r setup, include=FALSE}
 # Liste des packages requis
-pkgs <- c("dplyr", "ggplot2", "readr", "tidyr","forcats","arrow","scales","knitr","kableExtra","readxl","here")
+pkgs <- c(
+  "arrow","dplyr","here","DT","readr","readxl",
+  "knitr","kableExtra","scales","forcats","tidyr","ggplot2"
+)
 
-# # Installe ceux qui manquent
-# to_install <- pkgs[!pkgs %in% installed.packages()[, "Package"]]
-# if (length(to_install) > 0) {
-#   install.packages(to_install, repos = "https://cloud.r-project.org")
-# }
+missing <- pkgs[!vapply(pkgs, requireNamespace, logical(1), quietly = TRUE)]
+if (length(missing)) {
+  stop("Packages manquants dans l'env renv: ", paste(missing, collapse = ", "),
+       call. = FALSE)
+}
 
-# Charge-les
-lapply(pkgs, library, character.only = TRUE)
+invisible(lapply(pkgs, library, character.only = TRUE))
+
 ```
 
 ```{r}

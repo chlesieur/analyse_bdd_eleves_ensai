@@ -1,6 +1,9 @@
 project:
   type: website
 
+preview:
+  browser: true   # ouvre automatiquement
+  watch: false    # optionnel, évite le live-reload si tu veux juste voir le rendu
 
 execute:
   echo: false
