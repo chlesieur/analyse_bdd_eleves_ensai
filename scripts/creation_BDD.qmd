@@ -26,8 +26,8 @@ knitr::opts_chunk$set(eval = FALSE, echo = TRUE)
 ℹ️ Cette page documente le **script creation_BDD.R** à faire tourner après avoir exécuté les requêtes SQL dans Pamplemousse. Ce script crée les bases de données et les exporte en quatre format (parquet, xlsx, csv, rds). Il permet également de créer le *dictionnaire des variables*.
 :::
 
-[Requêtes SQL](scripts/requetes_SQL.qmd){.button .blue-button}
-[Voir le dictionnaire des variables](scripts/dictionnaire.qmd){.button .green-button}
+requetes_SQL.qmd{.button .blue-button}
+dictionnaire.qmd{.button .green-button}
 
 # Présentation du script
 
