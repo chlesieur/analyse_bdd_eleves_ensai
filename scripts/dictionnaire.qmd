@@ -28,26 +28,6 @@ if (!requireNamespace("arrow", quietly = TRUE)) {
   install.packages("arrow", repos = "https://cloud.r-project.org")
 }
 
-library(readxl)
-library(DT)
-library(arrow)
-
-
-safe_read_parquet <- function(path, ...) {
-  if (!file.exists(path)) {
-    stop("⚠️ Fichier introuvable : ", path)
-  }
-  tryCatch(
-    {
-      # Essai standard (avec mmap par défaut)
-      arrow::read_parquet(path, ...)
-    },
-    error = function(e) {
-      message("↪ Erreur lors de la lecture avec mmap. Nouvelle tentative sans mmap...")
-      arrow::read_parquet(path, mmap = FALSE, ...)
-    }
-  )
-}
 ```
 
 
