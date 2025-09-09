@@ -24,10 +24,15 @@ if (!requireNamespace("DT", quietly = TRUE)) {
   install.packages("DT", repos = "https://cloud.r-project.org")
 }
 
+if (!requireNamespace("arrow", quietly = TRUE)) {
+  install.packages("arrow", repos = "https://cloud.r-project.org")
+}
+
 library(readxl)
 library(DT)
+library(arrow)
 
-dict <- readxl::read_xlsx("Z:/0_Direction_des_Etudes/Base_eleve/data/dictionnaire.xlsx")
+dict <- read_parquet("Z:/0_Direction_des_Etudes/Base_eleve/data/dictionnaire.parquet")
 
 # En-têtes lisibles
 names(dict) <- c("Variable", "Label", "Format")

@@ -625,3 +625,5 @@ dictionnaire_labels <- function(df) {
 dict <- dictionnaire_labels(bdd_7)
 
 write_xlsx(dict, path = "data/dictionnaire.xlsx")
+
+write_parquet(dict, "data/dictionnaire.parquet")
