@@ -28,7 +28,7 @@ jobs:
       # Quarto (stable)
       - uses: quarto-dev/quarto-actions/setup@v2
         with:
-          version: "latest"   # ou épingle une version, ex: "1.4.554"
+          version: "release"   # ou épingle une version, ex: "1.4.554"
 
       # R (dernière release : 4.4/4.5)
       - uses: r-lib/actions/setup-r@v2
