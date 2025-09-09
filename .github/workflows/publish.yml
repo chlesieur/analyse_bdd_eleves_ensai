@@ -20,15 +20,17 @@ jobs:
 
       # 3. Installe les bibliothèques système nécessaires (pour terra, sf, rmarkdown, etc.)
       - name: Install system libraries
-        run: sudo apt-get update && sudo apt-get install -y \
-          cmake \
-          gdal-bin \
-          libgdal-dev \
-          libproj-dev \
-          libudunits2-dev \
-          libgeos-dev \
-          libpng-dev \
-          pandoc
+        run: sudo apt-get update -y
+             sudo apt-get install -y \
+            make \
+            cmake \
+            gdal-bin \
+            libgdal-dev \
+            libproj-dev \
+            libudunits2-dev \
+            libgeos-dev \
+            libpng-dev \
+            pandoc
 
       # 4. Cache des packages R (basé sur renv.lock)
       - name: Cache R packages
