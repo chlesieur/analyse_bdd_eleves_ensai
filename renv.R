@@ -15,3 +15,8 @@ renv::status()
 
 renv::remove("terra")
 renv::snapshot()
+
+
+renv::restore(prompt = FALSE)  # réinstalle les deps pour R 4.5
+renv::rebuild()                # (optionnel) reconstruit proprement
+renv::snapshot()               # met à jour renv.lock (Version R = 4.5.1)
