@@ -38,6 +38,11 @@ data_local/
 *.xlsx
 *.rds
 
+# Mais garder les exemples de dictionnaire
+!dictionnaire/
+!dictionnaire/*.parquet
+!dictionnaire/*.csv
+
 # ---- IDE ----
 .vscode/
 .idea/
