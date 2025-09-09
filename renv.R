@@ -12,3 +12,6 @@ install.packages(c("DBI", "sp"))
 renv::snapshot()
 
 renv::status()
+
+renv::remove("terra")
+renv::snapshot()

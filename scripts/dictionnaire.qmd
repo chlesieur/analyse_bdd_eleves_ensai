@@ -19,11 +19,11 @@ execute:
 # Liste des packages requis
 pkgs <- c("readxl", "DT", "arrow", "here")
 
-# Installe ceux qui manquent
-to_install <- pkgs[!pkgs %in% installed.packages()[, "Package"]]
-if (length(to_install) > 0) {
-  install.packages(to_install, repos = "https://cloud.r-project.org")
-}
+# # Installe ceux qui manquent
+# to_install <- pkgs[!pkgs %in% installed.packages()[, "Package"]]
+# if (length(to_install) > 0) {
+#   install.packages(to_install, repos = "https://cloud.r-project.org")
+# }
 
 # Charge-les
 lapply(pkgs, library, character.only = TRUE)
