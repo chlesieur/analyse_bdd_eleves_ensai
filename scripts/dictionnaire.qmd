@@ -15,27 +15,24 @@ execute:
 ℹ️ Utilisez la recherche globale ou les filtres sous les en-têtes.
 :::
 
-```{r}
-# Chargement
-if (!requireNamespace("readxl", quietly = TRUE)) {
-  install.packages("readxl", repos = "https://cloud.r-project.org")
-}
-if (!requireNamespace("DT", quietly = TRUE)) {
-  install.packages("DT", repos = "https://cloud.r-project.org")
+```{r setup, include=FALSE}
+# Liste des packages requis
+pkgs <- c("readxl", "DT", "arrow", "here")
+
+# Installe ceux qui manquent
+to_install <- pkgs[!pkgs %in% installed.packages()[, "Package"]]
+if (length(to_install) > 0) {
+  install.packages(to_install, repos = "https://cloud.r-project.org")
 }
 
-if (!requireNamespace("arrow", quietly = TRUE)) {
-  install.packages("arrow", repos = "https://cloud.r-project.org")
-}
+# Charge-les
+lapply(pkgs, library, character.only = TRUE)
 
 ```
 
 
 ```{r}
-dict <- safe_read_parquet(
-  "Z:/0_Direction_des_Etudes/Base_eleve/data/dictionnaire.parquet",
-  mmap = FALSE
-)
+dict <- read_parquet(here("data","dictionnaire.parquet"))
 
 # En-têtes lisibles
 names(dict) <- c("Variable", "Label", "Format")
