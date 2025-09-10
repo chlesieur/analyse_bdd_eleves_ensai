@@ -16,44 +16,44 @@ execute:
 :::
 
 ```{r setup, include=FALSE}
-# pkgs <- c("arrow", "DT")    # ajoute "here" si tu gardes here()
-# missing <- pkgs[!vapply(pkgs, requireNamespace, logical(1), quietly = TRUE)]
-# if (length(missing)) stop("Packages manquants dans l'env renv: ", paste(missing, collapse = ", "), call. = FALSE)
-# invisible(lapply(pkgs, library, character.only = TRUE))
+pkgs <- c("arrow", "DT")    # ajoute "here" si tu gardes here()
+missing <- pkgs[!vapply(pkgs, requireNamespace, logical(1), quietly = TRUE)]
+if (length(missing)) stop("Packages manquants dans l'env renv: ", paste(missing, collapse = ", "), call. = FALSE)
+invisible(lapply(pkgs, library, character.only = TRUE))
 
 ```
 
 
 ```{r}
-# # Résolution de chemin robuste (évite les faux positifs en CI)
-# dict <- arrow::read_parquet(here("dictionnaire","dictionnaire.parquet"))
-# 
-# # Renommage seulement si ≥ 3 colonnes
-# if (ncol(dict) >= 3) {
-#   names(dict)[1:3] <- c("Variable", "Label", "Format")
-# }
-# 
-# DT::datatable(
-#   dict,
-#   rownames   = FALSE,
-#   filter     = "top",
-#   extensions = "Buttons",
-#   options = list(
-#     pageLength = 25,
-#     autoWidth  = TRUE,
-#     dom = "Bfrtip",
-#     buttons = list(
-#       list(extend = "copy",  text = "Copier"),
-#       list(extend = "csv",   text = "CSV"),
-#       list(extend = "excel", text = "Excel"),
-#       list(extend = "print", text = "Imprimer")
-#     ),
-#     columnDefs = list(
-#       list(width = "25%", targets = 0),
-#       list(width = "55%", targets = 1),
-#       list(width = "20%", targets = 2)
-#     )
-#   ),
-#   class = "stripe hover row-border"
-# )
+# Résolution de chemin robuste (évite les faux positifs en CI)
+dict <- arrow::read_parquet(here("dictionnaire","dictionnaire.parquet"))
+
+# Renommage seulement si ≥ 3 colonnes
+if (ncol(dict) >= 3) {
+  names(dict)[1:3] <- c("Variable", "Label", "Format")
+}
+
+DT::datatable(
+  dict,
+  rownames   = FALSE,
+  filter     = "top",
+  extensions = "Buttons",
+  options = list(
+    pageLength = 25,
+    autoWidth  = TRUE,
+    dom = "Bfrtip",
+    buttons = list(
+      list(extend = "copy",  text = "Copier"),
+      list(extend = "csv",   text = "CSV"),
+      list(extend = "excel", text = "Excel"),
+      list(extend = "print", text = "Imprimer")
+    ),
+    columnDefs = list(
+      list(width = "25%", targets = 0),
+      list(width = "55%", targets = 1),
+      list(width = "20%", targets = 2)
+    )
+  ),
+  class = "stripe hover row-border"
+)
 ```
