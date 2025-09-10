@@ -42,3 +42,11 @@ invisible(lapply(pkgs, library, character.only = TRUE))
 
 renv::install(missing)   # si le message te dit lesquels manquent
 renv::snapshot()
+
+renv::install("arrow")
+renv::install("DT")
+renv::install("leaflet")
+
+renv::status()
+
+tools::package_dependencies("leaflet", recursive = TRUE, reverse = TRUE)
