@@ -16,10 +16,24 @@ execute:
 :::
 
 ```{r setup, include=FALSE}
-pkgs <- c("arrow", "DT")    # ajoute "here" si tu gardes here()
-missing <- pkgs[!vapply(pkgs, requireNamespace, logical(1), quietly = TRUE)]
-if (length(missing)) stop("Packages manquants dans l'env renv: ", paste(missing, collapse = ", "), call. = FALSE)
-invisible(lapply(pkgs, library, character.only = TRUE))
+pkgs <- c("arrow", "DT")
+
+for (pkg in pkgs) {
+  if (!requireNamespace(pkg, quietly = TRUE)) {
+    message("Installation du package manquant : ", pkg)
+    tryCatch(
+      {
+        install.packages(pkg, repos = "https://cloud.r-project.org")
+        library(pkg, character.only = TRUE)
+      },
+      error = function(e) {
+        stop("Impossible d’installer le package : ", pkg, "\n", e$message, call. = FALSE)
+      }
+    )
+  } else {
+    library(pkg, character.only = TRUE)
+  }
+}
 
 ```
 
