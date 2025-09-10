@@ -1,0 +1,2167 @@
+---
+title: "Script R — création de la BDD élèves"
+author: "Christophe Lesieur"
+format:
+  html:
+    theme: cosmo
+    toc: true
+    number-sections: true
+    code-copy: true
+    code-fold: show
+execute:
+  echo: true      # montre le code
+  eval: false     # NE JAMAIS exécuter (y compris les inlines)
+  warning: false
+  message: false
+  cache: false
+---
+
+```{r}
+#| label: setup-no-eval
+#| include: false
+knitr::opts_chunk$set(eval = FALSE, echo = TRUE)
+```
+
+::: {.box .note}
+ℹ️ Cette page documente le **analyse_2015_2024.qmd** qui permet de générer les tableaux et graphiques permettant d'alimenter la page **Analyses 2015-2024
+:::
+
+```{r setup, include=FALSE}
+# Liste des packages requis
+pkgs <- c(
+  "arrow","dplyr","here","DT","readr","readxl",
+  "knitr","kableExtra","scales","forcats","tidyr","ggplot2"
+)
+
+missing <- pkgs[!vapply(pkgs, requireNamespace, logical(1), quietly = TRUE)]
+if (length(missing)) {
+  stop("Packages manquants dans l'env renv: ", paste(missing, collapse = ", "),
+       call. = FALSE)
+}
+
+invisible(lapply(pkgs, library, character.only = TRUE))
+
+```
+
+```{r}
+bdd <- read_parquet(here("data","bdd_2015_2024.parquet")) %>% filter(annee_ecole != "Autres")
+
+# creation boucles sortie stat par bloc annee
+bdd$bloc_an<- ifelse(bdd$annee %in% c(2015,2016,2017),"2015-2017",ifelse (bdd$annee %in% c(2018,2019,2020),"2018-2020",ifelse(bdd$annee %in% c(2021,2022),"2021-2022","2023-2024")))
+
+# ajout du max et du rang standardisé
+bdd <- bdd %>%
+  group_by(annee) %>%
+  mutate(rang_max = max(ccc_ran_com, na.rm = TRUE),
+         ccc_ran_com_standard = ccc_ran_com/rang_max) %>%
+  ungroup()
+
+# travaux sur 1A et 2A
+bdd_1A_2A <- bdd[bdd$annee_ecole %in% c("1A","2A"),]
+
+#  conserver une ligne par eleve et par année
+bdd_1A_2A_unique <- bdd_1A_2A[!duplicated(cbind(bdd_1A_2A$id_crypte,bdd_1A_2A$annee)),]
+
+bdd_bloc_1A_2A <- bdd_1A_2A_unique %>%
+  filter(annee_ecole %in% c("1A","2A")) %>%
+  group_by(bloc_an, annee_ecole, spe_entree) %>%
+  summarise(
+    nb       = n(),
+    
+    # Moyennes
+    moy_g    = round(mean(moyenne_generale, na.rm = TRUE), 1),
+    moy_stat = round((mean(MSS1, na.rm = TRUE) + mean(MSS2, na.rm = TRUE)) / 2, 1),
+    moy_eco  = round((mean(MES1, na.rm = TRUE) + mean(MES2, na.rm = TRUE)) / 2, 1),
+    moy_info = round((mean(MIS1, na.rm = TRUE) + mean(MIS2, na.rm = TRUE)) / 2, 1),
+    moy_hum  = round((mean(MHS1, na.rm = TRUE) + mean(MHS2, na.rm = TRUE)) / 2, 1),
+    
+    # Proportions < 12 (en %)
+    prop12_g    = round(100 * mean(moyenne_generale < 12, na.rm = TRUE), 1),
+    prop12_stat = round(100 * mean((MSS1 + MSS2)/2 < 12, na.rm = TRUE), 1),
+    prop12_eco  = round(100 * mean((MES1 + MES2)/2 < 12, na.rm = TRUE), 1),
+    prop12_info = round(100 * mean((MIS1 + MIS2)/2 < 12, na.rm = TRUE), 1),
+    prop12_hum  = round(100 * mean((MHS1 + MHS2)/2 < 12, na.rm = TRUE), 1),
+    
+    .groups = "drop"
+  ) %>%
+  pivot_wider(
+    names_from  = spe_entree,
+    values_from = c(nb, moy_g, moy_stat, moy_eco, moy_info, moy_hum,
+                    prop12_g, prop12_stat, prop12_eco, prop12_info, prop12_hum),
+    values_fill = 0
+  ) %>%
+  arrange(bloc_an, annee_ecole)
+
+# travaux sur 3A
+bdd_3A <- bdd[bdd$annee_ecole=="3A" & !is.na(bdd$filiere_3A) & bdd$att_ing=="ingénieur",]
+
+#  conserver une ligne par eleve et par année
+bdd_3A <- bdd_3A[!duplicated(cbind(bdd_3A$id_crypte,bdd_3A$annee)),]
+
+# recoder filiere 3A pour pb sur autres et pb sur nom filiere (regroupement)
+bdd_3A$fil_3A <- ifelse(bdd_3A$filiere_3A == "Autres" & bdd_3A$voie_lib %in% c("3A,3A GDRIF","3A,3A GDRIF,OFPR","3A,3A GR", "3A,3A GR,3A Ing,OFPR,T00000","3A,3A GR,3A Ing,T00000","3A,3A GR,3A Ing,T01850","3A,3A GR,3A Ing,T02650","3A,3A GR,CVEC","3A,3A GR,CVEC,OFPR","3A,3A GR,CVEC,OFPR,Tpoursuite","3A,3A GR,CVEC,Tpoursuite","3A,3A GR,OFPR"),"GDR",ifelse(bdd_3A$filiere_3A == "Autres" & bdd_3A$voie_lib %in% c("3A,3A Ing,3A SBio,OFPR,T00000","3A,3A Ing,3A SBio,OFPR,T01850","3A,3A Ing,3A SBio,T00000","3A,3A Ing,3A SBio,T01850","3A,3A SBio","3A,3A SBio,CVEC","3A,3A SBio,CVEC,OFPR","3A,3A SBio,CVEC,OFPR,Tpoursuite","3A,3A SBio,CVEC,Tpoursuite","3A,3A SBio,OFPR","3A,3A SBio,OFPR,Tpoursuite","3A,3A SBio,T00000"),"SBio",ifelse(bdd_3A$filiere_3A == "M","MKT",ifelse(bdd_3A$filiere_3A == "SV","SBio",ifelse(bdd_3A$filiere_3A == "ISTS","MES",bdd_3A$filiere_3A)))))
+```
+
+## 1. Données de cadrage
+
+### 1.1. Sur les élèves toutes années confondues
+
+```{r}
+
+nb_eleve_par_annee <- bdd %>% 
+  distinct(id_crypte, annee, annee_ecole) %>%
+  count(annee, annee_ecole) %>%                   
+  pivot_wider(
+    names_from  = annee_ecole,                    
+    values_from = n,
+    names_prefix = "nb_",
+    values_fill = 0
+  )
+
+nb_eleve_par_annee %>%
+  kable(format = "html", caption = "Nombre d'élèves par année et niveau") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = FALSE, position = "center")
+
+```
+
+```{r}
+
+nb_eleve_par_annee %>% 
+  pivot_longer(-annee, names_to = "niveau", values_to = "effectif") |>
+  mutate(niveau = recode(niveau,
+                         nb_1A = "1A",
+                         nb_2A = "2A",
+                         nb_3A = "3A")) |>
+  ggplot(aes(x = factor(annee), y = effectif, fill = niveau)) +
+  geom_col(position = position_dodge(width = 0.8)) +
+  geom_text(aes(label = comma(effectif)), 
+            position = position_dodge(width = 0.8),
+            vjust = -0.3, size = 3) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.05)),
+                     labels = comma) +
+  scale_fill_brewer(palette = "Set2", name = "Niveau") +
+  labs(title = "Effectifs par année et par niveau",
+       x = "Année universitaire",
+       y = "Nombre d'étudiants") +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "top")
+
+```
+
+### 1.2. Nombre d'étudiants par sexe
+
+```{r}
+
+# Calcul des % H/F
+pct_eleve_par_annee <- bdd %>% 
+  distinct(id_crypte, annee, annee_ecole, sexe) %>%
+  count(annee, annee_ecole, sexe) %>%
+  group_by(annee, annee_ecole) %>%
+  mutate(
+    pct = round(100 * n / sum(n), 1)  # % par sexe dans chaque (année, niveau)
+  ) %>%
+  ungroup() %>%
+  select(-n) %>%  # ⬅️ on enlève les effectifs, on garde seulement les %
+  pivot_wider(
+    names_from = c(annee_ecole, sexe),
+    values_from = pct,
+    values_fill = 0
+  )
+
+# Tableau HTML avec kable
+pct_eleve_par_annee %>%
+  kable(format = "html", caption = "% d'élèves par année - niveau - sexe") %>%
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed"),
+    full_width = FALSE,
+    position = "center"
+  )
+
+```
+
+### 1.3. Nombre d'étudiants par statut
+
+```{r}
+
+nb_eleve_par_annee <- bdd %>% 
+  distinct(id_crypte, annee, annee_ecole, att_ing) %>%
+  count(annee, annee_ecole, att_ing) %>%                   
+  pivot_wider(
+    names_from  = annee_ecole,                    
+    values_from = n,
+    names_prefix = "nb_",
+    values_fill = 0
+  )
+
+nb_eleve_par_annee %>%
+  kable(format = "html", caption = "Nombre d'élèves par année - niveau - statut") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = FALSE, position = "center")
+
+```
+
+### 1.4. Nombre de redoublements par année
+
+```{r}
+
+nb_eleve_par_annee <- bdd %>% 
+  distinct(id_crypte, annee, annee_ecole, redoublement) %>%
+  count(annee, annee_ecole, redoublement) %>%                   
+  pivot_wider(
+    names_from  = annee_ecole,                    
+    values_from = n,
+    names_prefix = "nb_",
+    values_fill = 0
+  )
+
+nb_eleve_par_annee %>%
+  filter(redoublement == 1) %>% 
+  kable(format = "html", caption = "Nombre d'élèves par année - niveau - statut") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = FALSE, position = "center")
+
+```
+
+### 1.5. Nombre d'exclusions par année
+
+```{r}
+
+nb_eleve_par_annee <- bdd %>% 
+  distinct(id_crypte, annee, annee_ecole, exclusion) %>%
+  count(annee, annee_ecole, exclusion) %>%                   
+  pivot_wider(
+    names_from  = annee_ecole,                    
+    values_from = n,
+    names_prefix = "nb_",
+    values_fill = 0
+  )
+
+nb_eleve_par_annee %>%
+  filter(exclusion == 1) %>% 
+  kable(format = "html", caption = "Nombre d'élèves par année - niveau - statut") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = FALSE, position = "center")
+
+```
+
+### 1.6. Répartition des spécialisation entre troisième année
+
+
+```{r}
+
+nb_eleves_3A_ing <- bdd_3A %>% 
+  distinct(id_crypte, annee, fil_3A) %>%
+  count(annee, fil_3A) %>%                   
+  pivot_wider(
+    names_from  = fil_3A,                    
+    values_from = n,
+    names_prefix = "nb_",
+    values_fill = 0
+  )
+
+nb_eleves_3A_ing %>%
+  kable(format = "html", caption = "Nombre d'élèves par filière 3A") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = FALSE, position = "center")
+
+```
+
+```{r}
+
+# Données en format long avec % par année
+nb_eleves_3A_long <- bdd_3A %>% 
+  distinct(id_crypte, annee, fil_3A) %>%
+  count(annee, fil_3A) %>%
+  group_by(annee) %>%
+  mutate(
+    pct = 100 * n / sum(n)
+  ) %>%
+  ungroup()
+
+# Graphique empilé base 100 %
+ggplot(nb_eleves_3A_long, aes(x = factor(annee), y = pct, fill = fil_3A)) +
+  geom_col(position = "stack") +
+  geom_text(aes(label = paste0(round(pct, 1), "%")),
+            position = position_stack(vjust = 0.5), size = 3, color = "white") +
+  labs(
+    title = "Répartition des élèves par filière 3A (en %)",
+    x = "Année",
+    y = "Pourcentage",
+    fill = "Filière 3A"
+  ) +
+  scale_y_continuous(labels = function(x) paste0(x, "%")) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    axis.text.x = element_text(angle = 30, hjust = 1)
+  )
+
+```
+
+## 2. Spécialité à l'entrée et scolarité à l'ENSAI
+
+### 2.1. Évolution des effectifs selon la spécialité à l'entrée
+
+### 2.1.1. En première année
+
+- En effectifs
+
+```{r}
+
+bdd_bloc_1A_2A %>%
+  select(bloc_an, annee_ecole,contains("nb_")) %>%  
+  filter(annee_ecole == "1A") %>% 
+  arrange(desc(bloc_an)) %>%  
+  kable(format = "html", caption = "Nombre d'élèves selon la filière d'entrée",
+        align = "c") %>%  
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed"),
+    full_width = FALSE,
+    position = "center",
+    fixed_thead = TRUE
+  ) %>%
+  column_spec(1, width = "8em")
+
+```
+
+- En taux
+
+```{r}
+taux_1A <- bdd_bloc_1A_2A %>%
+  select(bloc_an, annee_ecole,contains("nb_")) %>%  
+  filter(annee_ecole == "1A") %>%
+  arrange(desc(bloc_an)) %>%
+  # calcul du total ligne
+  mutate(Total = rowSums(select(., where(is.numeric)), na.rm = TRUE)) %>%
+  # calcul des pourcentages (sauf bloc_an, annee_ecole, Total)
+  mutate(across(-c(bloc_an, annee_ecole, Total), ~ round(.x / Total * 100, 1))) %>%
+  select(-Total)
+
+taux_1A %>%
+  arrange(desc(bloc_an)) %>%   # tri inverse sur bloc_an
+  kable(format = "html", caption = "Répartition selon la filière d'entrée",
+        align = "c") %>%       # toutes les colonnes centrées
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed"),
+    full_width = FALSE,
+    position = "center",
+    fixed_thead = TRUE
+  ) %>%
+  column_spec(1, width = "8em") 
+
+```
+
+- Graphique
+
+```{r}
+
+taux_1A_long <- taux_1A %>%
+  pivot_longer(
+    cols = -c(bloc_an, annee_ecole),
+    names_to = "spe_entree",
+    values_to = "pct"
+  )
+
+ggplot(taux_1A_long, aes(x = bloc_an, y = pct, fill = spe_entree)) +
+  geom_col(position = "stack") +
+  geom_text(aes(label = paste0(pct, "%")),
+            position = position_stack(vjust = 0.5),
+            size = 3, color = "white") +
+  labs(
+    title = "Répartition des élèves de 1A par filière d'entrée (%)",
+    x = "Année",
+    y = "Part des élèves (%)",
+    fill = "Filière d'entrée"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "right")
+```
+
+### 2.1.2 En deuxième année
+
+- En effectifs
+
+```{r}
+
+bdd_bloc_1A_2A %>%
+    select(bloc_an, annee_ecole,contains("nb_")) %>%  
+  filter(annee_ecole == "2A") %>%
+  arrange(desc(bloc_an)) %>%  
+  kable(format = "html", caption = "Nombre d'élèves selon la filière d'entrée",
+        align = "c") %>%       
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed"),
+    full_width = FALSE,
+    position = "center",
+    fixed_thead = TRUE
+  ) %>%
+  column_spec(1, width = "8em")   
+
+```
+
+- En taux
+
+```{r}
+taux_2A <- bdd_bloc_1A_2A %>%
+    select(bloc_an, annee_ecole,contains("nb_")) %>%  
+  filter(annee_ecole == "2A") %>%
+  arrange(desc(bloc_an)) %>%
+  # calcul du total ligne
+  mutate(Total = rowSums(select(., where(is.numeric)), na.rm = TRUE)) %>%
+  # calcul des pourcentages (sauf bloc_an, annee_ecole, Total)
+  mutate(across(-c(bloc_an, annee_ecole, Total), ~ round(.x / Total * 100, 1))) %>%
+  select(-Total)
+
+taux_2A %>%
+  arrange(desc(bloc_an)) %>%   # tri inverse sur bloc_an
+  kable(format = "html", caption = "Répartition selon la filière d'entrée",
+        align = "c") %>%       # toutes les colonnes centrées
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed"),
+    full_width = FALSE,
+    position = "center",
+    fixed_thead = TRUE
+  ) %>%
+  column_spec(1, width = "8em") 
+
+```
+
+```{r}
+# On part de taux_1A et on repasse en format long
+taux_2A_long <- taux_2A %>%
+  pivot_longer(
+    cols = -c(bloc_an, annee_ecole),
+    names_to = "spe_entree",
+    values_to = "pct"
+  )
+
+# Graphique : barres empilées en % par année
+ggplot(taux_2A_long, aes(x = bloc_an, y = pct, fill = spe_entree)) +
+  geom_col(position = "stack") +
+  geom_text(aes(label = paste0(pct, "%")),
+            position = position_stack(vjust = 0.5),
+            size = 3, color = "white") +
+  labs(
+    title = "Répartition des élèves de 1A par filière d'entrée (%)",
+    x = "Année",
+    y = "Part des élèves (%)",
+    fill = "Filière d'entrée"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "right")
+
+```
+
+## 2.2. Moyenne des élèves selon la spécialité à l'entrée
+
+### 2.2.1. En première année
+
+- Moyenne générale
+
+```{r}
+
+bdd_bloc_1A_2A %>%
+  select(bloc_an, annee_ecole,contains("moy_g"), -c("moy_stat_AST 2A")) %>%  
+  filter(annee_ecole == "1A") %>% 
+  arrange(desc(bloc_an)) %>%  
+  kable(format = "html", caption = "Nombre d'élèves selon la filière d'entrée",
+        align = "c") %>%  
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed"),
+    full_width = FALSE,
+    position = "center",
+    fixed_thead = TRUE
+  ) %>%
+  column_spec(1, width = "8em")
+
+```
+
+```{r}
+
+bdd_bloc_1A_2A %>%
+  select(bloc_an, annee_ecole, contains("moy_g"), -c("moy_g_AST 2A")) %>%
+  filter(annee_ecole == "1A") %>%
+  arrange(desc(bloc_an)) %>%
+  pivot_longer(
+    cols = contains("moy_g"),
+    names_to = "filiere",
+    values_to = "moyenne"
+  ) %>%
+  ggplot(aes(x = filiere, y = moyenne, fill = bloc_an)) +
+  geom_col(position = "dodge") +
+  labs(
+    title = "1A : Moyennes Générales",
+    x = "Filière d'entrée",
+    y = "Moyenne"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 30, hjust = 1),
+    plot.title = element_text(hjust = 0.5)
+  )
+
+```
+
+- UE Stat
+
+```{r}
+
+bdd_bloc_1A_2A %>%
+  select(bloc_an, annee_ecole,contains("moy_stat"), -c("moy_stat_AST 2A")) %>%  
+  filter(annee_ecole == "1A") %>% 
+  arrange(desc(bloc_an)) %>%  
+  kable(format = "html", caption = "Nombre d'élèves selon la filière d'entrée",
+        align = "c") %>%  
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed"),
+    full_width = FALSE,
+    position = "center",
+    fixed_thead = TRUE
+  ) %>%
+  column_spec(1, width = "8em")
+
+```
+
+```{r}
+
+bdd_bloc_1A_2A %>%
+  select(bloc_an, annee_ecole, contains("moy_stat"), -c("moy_stat_AST 2A")) %>%
+  filter(annee_ecole == "1A") %>%
+  arrange(desc(bloc_an)) %>%
+  pivot_longer(
+    cols = contains("moy_stat"),
+    names_to = "filiere",
+    values_to = "moyenne"
+  ) %>%
+  ggplot(aes(x = filiere, y = moyenne, fill = bloc_an)) +
+  geom_col(position = "dodge") +
+  labs(
+    title = "1A : Moyennes UE Stat",
+    x = "Filière d'entrée",
+    y = "Moyenne"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 30, hjust = 1),
+    plot.title = element_text(hjust = 0.5)
+  )
+
+```
+
+- UE Info
+
+```{r}
+
+bdd_bloc_1A_2A %>%
+  select(bloc_an, annee_ecole,contains("moy_inf"), -c("moy_stat_AST 2A")) %>%  
+  filter(annee_ecole == "1A") %>% 
+  arrange(desc(bloc_an)) %>%  
+  kable(format = "html", caption = "Nombre d'élèves selon la filière d'entrée",
+        align = "c") %>%  
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed"),
+    full_width = FALSE,
+    position = "center",
+    fixed_thead = TRUE
+  ) %>%
+  column_spec(1, width = "8em")
+```
+
+```{r}
+
+bdd_bloc_1A_2A %>%
+  select(bloc_an, annee_ecole, contains("moy_info"), -c("moy_info_AST 2A")) %>%
+  filter(annee_ecole == "1A") %>%
+  arrange(desc(bloc_an)) %>%
+  pivot_longer(
+    cols = contains("moy_info"),
+    names_to = "filiere",
+    values_to = "moyenne"
+  ) %>%
+  ggplot(aes(x = filiere, y = moyenne, fill = bloc_an)) +
+  geom_col(position = "dodge") +
+  labs(
+    title = "1A : Moyennes UE Info",
+    x = "Filière d'entrée",
+    y = "Moyenne"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 30, hjust = 1),
+    plot.title = element_text(hjust = 0.5)
+  )
+
+```
+
+- UE Éco
+
+```{r}
+
+bdd_bloc_1A_2A %>%
+  select(bloc_an, annee_ecole,contains("moy_eco"), -c("moy_stat_AST 2A")) %>%  
+  filter(annee_ecole == "1A") %>% 
+  arrange(desc(bloc_an)) %>%  
+  kable(format = "html", caption = "Nombre d'élèves selon la filière d'entrée",
+        align = "c") %>%  
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed"),
+    full_width = FALSE,
+    position = "center",
+    fixed_thead = TRUE
+  ) %>%
+  column_spec(1, width = "8em")
+```
+
+```{r}
+
+bdd_bloc_1A_2A %>%
+  select(bloc_an, annee_ecole, contains("moy_eco"), -c("moy_eco_AST 2A")) %>%
+  filter(annee_ecole == "1A") %>%
+  arrange(desc(bloc_an)) %>%
+  pivot_longer(
+    cols = contains("moy_eco"),
+    names_to = "filiere",
+    values_to = "moyenne"
+  ) %>%
+  ggplot(aes(x = filiere, y = moyenne, fill = bloc_an)) +
+  geom_col(position = "dodge") +
+  labs(
+    title = "1A : Moyennes UE Éco",
+    x = "Filière d'entrée",
+    y = "Moyenne"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 30, hjust = 1),
+    plot.title = element_text(hjust = 0.5)
+  )
+
+```
+
+- UE Humanités
+
+```{r}
+
+bdd_bloc_1A_2A %>%
+  select(bloc_an, annee_ecole,contains("moy_hum"), -c("moy_hum_AST 2A")) %>%  
+  filter(annee_ecole == "1A") %>% 
+  arrange(desc(bloc_an)) %>%  
+  kable(format = "html", caption = "Nombre d'élèves selon la filière d'entrée",
+        align = "c") %>%  
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed"),
+    full_width = FALSE,
+    position = "center",
+    fixed_thead = TRUE
+  ) %>%
+  column_spec(1, width = "8em")
+```
+
+```{r}
+
+bdd_bloc_1A_2A %>%
+  select(bloc_an, annee_ecole, contains("moy_hum"), -c("moy_hum_AST 2A")) %>%
+  filter(annee_ecole == "1A") %>%
+  arrange(desc(bloc_an)) %>%
+  pivot_longer(
+    cols = contains("moy_hum"),
+    names_to = "filiere",
+    values_to = "moyenne"
+  ) %>%
+  ggplot(aes(x = filiere, y = moyenne, fill = bloc_an)) +
+  geom_col(position = "dodge") +
+  labs(
+    title = "1A : Moyennes UE Humanités",
+    x = "Filière d'entrée",
+    y = "Moyenne"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 30, hjust = 1),
+    plot.title = element_text(hjust = 0.5)
+  )
+
+```
+
+
+### 2.2.2. En deuxième année
+
+- Moyenne générale
+
+```{r}
+
+bdd_bloc_1A_2A %>%
+  select(bloc_an, annee_ecole,contains("moy_g")) %>%  
+  filter(annee_ecole == "2A") %>% 
+  arrange(desc(bloc_an)) %>%  
+  kable(format = "html", caption = "Nombre d'élèves selon la filière d'entrée",
+        align = "c") %>%  
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed"),
+    full_width = FALSE,
+    position = "center",
+    fixed_thead = TRUE
+  ) %>%
+  column_spec(1, width = "8em")
+
+```
+
+```{r}
+
+bdd_bloc_1A_2A %>%
+  select(bloc_an, annee_ecole, contains("moy_g")) %>%
+  filter(annee_ecole == "2A") %>%
+  arrange(desc(bloc_an)) %>%
+  pivot_longer(
+    cols = contains("moy_g"),
+    names_to = "filiere",
+    values_to = "moyenne"
+  ) %>%
+  ggplot(aes(x = filiere, y = moyenne, fill = bloc_an)) +
+  geom_col(position = "dodge") +
+  labs(
+    title = "1A : Moyennes Générales",
+    x = "Filière d'entrée",
+    y = "Moyenne"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 30, hjust = 1),
+    plot.title = element_text(hjust = 0.5)
+  )
+
+```
+
+
+- UE Stat
+
+```{r}
+
+bdd_bloc_1A_2A %>%
+  select(bloc_an, annee_ecole,contains("moy_stat")) %>%  
+  filter(annee_ecole == "2A") %>% 
+  arrange(desc(bloc_an)) %>%  
+  kable(format = "html", caption = "Nombre d'élèves selon la filière d'entrée",
+        align = "c") %>%  
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed"),
+    full_width = FALSE,
+    position = "center",
+    fixed_thead = TRUE
+  ) %>%
+  column_spec(1, width = "8em")
+
+```
+
+```{r}
+
+bdd_bloc_1A_2A %>%
+  select(bloc_an, annee_ecole, contains("moy_stat")) %>%
+  filter(annee_ecole == "2A") %>%
+  arrange(desc(bloc_an)) %>%
+  pivot_longer(
+    cols = contains("moy_stat"),
+    names_to = "filiere",
+    values_to = "moyenne"
+  ) %>%
+  ggplot(aes(x = filiere, y = moyenne, fill = bloc_an)) +
+  geom_col(position = "dodge") +
+  labs(
+    title = "1A : Moyennes UE Stat",
+    x = "Filière d'entrée",
+    y = "Moyenne"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 30, hjust = 1),
+    plot.title = element_text(hjust = 0.5)
+  )
+
+```
+
+- UE Info
+
+```{r}
+
+bdd_bloc_1A_2A %>%
+  select(bloc_an, annee_ecole,contains("moy_inf")) %>%  
+  filter(annee_ecole == "2A") %>% 
+  arrange(desc(bloc_an)) %>%  
+  kable(format = "html", caption = "Nombre d'élèves selon la filière d'entrée",
+        align = "c") %>%  
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed"),
+    full_width = FALSE,
+    position = "center",
+    fixed_thead = TRUE
+  ) %>%
+  column_spec(1, width = "8em")
+```
+
+```{r}
+
+bdd_bloc_1A_2A %>%
+  select(bloc_an, annee_ecole, contains("moy_info")) %>%
+  filter(annee_ecole == "2A") %>%
+  arrange(desc(bloc_an)) %>%
+  pivot_longer(
+    cols = contains("moy_info"),
+    names_to = "filiere",
+    values_to = "moyenne"
+  ) %>%
+  ggplot(aes(x = filiere, y = moyenne, fill = bloc_an)) +
+  geom_col(position = "dodge") +
+  labs(
+    title = "1A : Moyennes UE Info",
+    x = "Filière d'entrée",
+    y = "Moyenne"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 30, hjust = 1),
+    plot.title = element_text(hjust = 0.5)
+  )
+
+```
+
+- UE Éco
+
+```{r}
+
+bdd_bloc_1A_2A %>%
+  select(bloc_an, annee_ecole,contains("moy_eco")) %>%  
+  filter(annee_ecole == "2A") %>% 
+  arrange(desc(bloc_an)) %>%  
+  kable(format = "html", caption = "Nombre d'élèves selon la filière d'entrée",
+        align = "c") %>%  
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed"),
+    full_width = FALSE,
+    position = "center",
+    fixed_thead = TRUE
+  ) %>%
+  column_spec(1, width = "8em")
+```
+
+```{r}
+
+bdd_bloc_1A_2A %>%
+  select(bloc_an, annee_ecole, contains("moy_eco")) %>%
+  filter(annee_ecole == "2A") %>%
+  arrange(desc(bloc_an)) %>%
+  pivot_longer(
+    cols = contains("moy_eco"),
+    names_to = "filiere",
+    values_to = "moyenne"
+  ) %>%
+  ggplot(aes(x = filiere, y = moyenne, fill = bloc_an)) +
+  geom_col(position = "dodge") +
+  labs(
+    title = "1A : Moyennes UE Éco",
+    x = "Filière d'entrée",
+    y = "Moyenne"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 30, hjust = 1),
+    plot.title = element_text(hjust = 0.5)
+  )
+
+```
+
+- UE Humanités
+
+```{r}
+
+bdd_bloc_1A_2A %>%
+  select(bloc_an, annee_ecole,contains("moy_hum")) %>%  
+  filter(annee_ecole == "2A") %>% 
+  arrange(desc(bloc_an)) %>%  
+  kable(format = "html", caption = "Nombre d'élèves selon la filière d'entrée",
+        align = "c") %>%  
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed"),
+    full_width = FALSE,
+    position = "center",
+    fixed_thead = TRUE
+  ) %>%
+  column_spec(1, width = "8em")
+```
+
+```{r}
+
+bdd_bloc_1A_2A %>%
+  select(bloc_an, annee_ecole, contains("moy_hum")) %>%
+  filter(annee_ecole == "1A") %>%
+  arrange(desc(bloc_an)) %>%
+  pivot_longer(
+    cols = contains("moy_hum"),
+    names_to = "filiere",
+    values_to = "moyenne"
+  ) %>%
+  ggplot(aes(x = filiere, y = moyenne, fill = bloc_an)) +
+  geom_col(position = "dodge") +
+  labs(
+    title = "1A : Moyennes UE Humanités",
+    x = "Filière d'entrée",
+    y = "Moyenne"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 30, hjust = 1),
+    plot.title = element_text(hjust = 0.5)
+  )
+
+```
+
+
+## 2.3. Proportion des élèves en difficulté selon la spécialité à l'entrée
+
+Le seuil pour les élèves en difficulté a été fixé à une moyenne inférieure à 12.
+
+### 2.2.1. En première année
+
+- Moyenne générale
+
+```{r}
+
+bdd_bloc_1A_2A %>%
+  select(bloc_an, annee_ecole,contains("prop12_g"), -c("prop12_stat_AST 2A")) %>%  
+  filter(annee_ecole == "1A") %>% 
+  arrange(desc(bloc_an)) %>%  
+  kable(format = "html", caption = "Nombre d'élèves selon la filière d'entrée",
+        align = "c") %>%  
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed"),
+    full_width = FALSE,
+    position = "center",
+    fixed_thead = TRUE
+  ) %>%
+  column_spec(1, width = "8em")
+
+```
+
+```{r}
+
+bdd_bloc_1A_2A %>%
+  select(bloc_an, annee_ecole, contains("prop12_g"), -c("prop12_g_AST 2A")) %>%
+  filter(annee_ecole == "1A") %>%
+  arrange(desc(bloc_an)) %>%
+  pivot_longer(
+    cols = contains("prop12_g"),
+    names_to = "filiere",
+    values_to = "moyenne"
+  ) %>%
+  ggplot(aes(x = filiere, y = moyenne, fill = bloc_an)) +
+  geom_col(position = "dodge") +
+  labs(
+    title = "1A : Moyennes Générales",
+    x = "Filière d'entrée",
+    y = "Moyenne"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 30, hjust = 1),
+    plot.title = element_text(hjust = 0.5)
+  )
+
+```
+
+- UE Stat
+
+```{r}
+
+bdd_bloc_1A_2A %>%
+  select(bloc_an, annee_ecole,contains("prop12_stat"), -c("prop12_stat_AST 2A")) %>%  
+  filter(annee_ecole == "1A") %>% 
+  arrange(desc(bloc_an)) %>%  
+  kable(format = "html", caption = "Nombre d'élèves selon la filière d'entrée",
+        align = "c") %>%  
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed"),
+    full_width = FALSE,
+    position = "center",
+    fixed_thead = TRUE
+  ) %>%
+  column_spec(1, width = "8em")
+
+```
+
+```{r}
+
+bdd_bloc_1A_2A %>%
+  select(bloc_an, annee_ecole, contains("prop12_stat"), -c("prop12_stat_AST 2A")) %>%
+  filter(annee_ecole == "1A") %>%
+  arrange(desc(bloc_an)) %>%
+  pivot_longer(
+    cols = contains("prop12_stat"),
+    names_to = "filiere",
+    values_to = "moyenne"
+  ) %>%
+  ggplot(aes(x = filiere, y = moyenne, fill = bloc_an)) +
+  geom_col(position = "dodge") +
+  labs(
+    title = "1A : Moyennes UE Stat",
+    x = "Filière d'entrée",
+    y = "Moyenne"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 30, hjust = 1),
+    plot.title = element_text(hjust = 0.5)
+  )
+
+```
+
+- UE Info
+
+```{r}
+
+bdd_bloc_1A_2A %>%
+  select(bloc_an, annee_ecole,contains("prop12_inf"), -c("prop12_stat_AST 2A")) %>%  
+  filter(annee_ecole == "1A") %>% 
+  arrange(desc(bloc_an)) %>%  
+  kable(format = "html", caption = "Nombre d'élèves selon la filière d'entrée",
+        align = "c") %>%  
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed"),
+    full_width = FALSE,
+    position = "center",
+    fixed_thead = TRUE
+  ) %>%
+  column_spec(1, width = "8em")
+```
+
+```{r}
+
+bdd_bloc_1A_2A %>%
+  select(bloc_an, annee_ecole, contains("prop12_info"), -c("prop12_info_AST 2A")) %>%
+  filter(annee_ecole == "1A") %>%
+  arrange(desc(bloc_an)) %>%
+  pivot_longer(
+    cols = contains("prop12_info"),
+    names_to = "filiere",
+    values_to = "moyenne"
+  ) %>%
+  ggplot(aes(x = filiere, y = moyenne, fill = bloc_an)) +
+  geom_col(position = "dodge") +
+  labs(
+    title = "1A : Moyennes UE Info",
+    x = "Filière d'entrée",
+    y = "Moyenne"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 30, hjust = 1),
+    plot.title = element_text(hjust = 0.5)
+  )
+
+```
+
+- UE Éco
+
+```{r}
+
+bdd_bloc_1A_2A %>%
+  select(bloc_an, annee_ecole,contains("prop12_eco"), -c("prop12_stat_AST 2A")) %>%  
+  filter(annee_ecole == "1A") %>% 
+  arrange(desc(bloc_an)) %>%  
+  kable(format = "html", caption = "Nombre d'élèves selon la filière d'entrée",
+        align = "c") %>%  
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed"),
+    full_width = FALSE,
+    position = "center",
+    fixed_thead = TRUE
+  ) %>%
+  column_spec(1, width = "8em")
+```
+
+```{r}
+
+bdd_bloc_1A_2A %>%
+  select(bloc_an, annee_ecole, contains("prop12_eco"), -c("prop12_eco_AST 2A")) %>%
+  filter(annee_ecole == "1A") %>%
+  arrange(desc(bloc_an)) %>%
+  pivot_longer(
+    cols = contains("prop12_eco"),
+    names_to = "filiere",
+    values_to = "moyenne"
+  ) %>%
+  ggplot(aes(x = filiere, y = moyenne, fill = bloc_an)) +
+  geom_col(position = "dodge") +
+  labs(
+    title = "1A : Moyennes UE Éco",
+    x = "Filière d'entrée",
+    y = "Moyenne"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 30, hjust = 1),
+    plot.title = element_text(hjust = 0.5)
+  )
+
+```
+
+- UE Humanités
+
+```{r}
+
+bdd_bloc_1A_2A %>%
+  select(bloc_an, annee_ecole,contains("prop12_hum"), -c("prop12_hum_AST 2A")) %>%  
+  filter(annee_ecole == "1A") %>% 
+  arrange(desc(bloc_an)) %>%  
+  kable(format = "html", caption = "Nombre d'élèves selon la filière d'entrée",
+        align = "c") %>%  
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed"),
+    full_width = FALSE,
+    position = "center",
+    fixed_thead = TRUE
+  ) %>%
+  column_spec(1, width = "8em")
+```
+
+```{r}
+
+bdd_bloc_1A_2A %>%
+  select(bloc_an, annee_ecole, contains("prop12_hum"), -c("prop12_hum_AST 2A")) %>%
+  filter(annee_ecole == "1A") %>%
+  arrange(desc(bloc_an)) %>%
+  pivot_longer(
+    cols = contains("prop12_hum"),
+    names_to = "filiere",
+    values_to = "moyenne"
+  ) %>%
+  ggplot(aes(x = filiere, y = moyenne, fill = bloc_an)) +
+  geom_col(position = "dodge") +
+  labs(
+    title = "1A : Moyennes UE Humanités",
+    x = "Filière d'entrée",
+    y = "Moyenne"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 30, hjust = 1),
+    plot.title = element_text(hjust = 0.5)
+  )
+
+```
+
+
+### 2.2.2. En deuxième année
+
+- Moyenne générale
+
+```{r}
+
+bdd_bloc_1A_2A %>%
+  select(bloc_an, annee_ecole,contains("prop12_g")) %>%  
+  filter(annee_ecole == "2A") %>% 
+  arrange(desc(bloc_an)) %>%  
+  kable(format = "html", caption = "Nombre d'élèves selon la filière d'entrée",
+        align = "c") %>%  
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed"),
+    full_width = FALSE,
+    position = "center",
+    fixed_thead = TRUE
+  ) %>%
+  column_spec(1, width = "8em")
+
+```
+
+```{r}
+
+bdd_bloc_1A_2A %>%
+  select(bloc_an, annee_ecole, contains("prop12_g")) %>%
+  filter(annee_ecole == "2A") %>%
+  arrange(desc(bloc_an)) %>%
+  pivot_longer(
+    cols = contains("prop12_g"),
+    names_to = "filiere",
+    values_to = "moyenne"
+  ) %>%
+  ggplot(aes(x = filiere, y = moyenne, fill = bloc_an)) +
+  geom_col(position = "dodge") +
+  labs(
+    title = "1A : Moyennes Générales",
+    x = "Filière d'entrée",
+    y = "Moyenne"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 30, hjust = 1),
+    plot.title = element_text(hjust = 0.5)
+  )
+
+```
+
+
+- UE Stat
+
+```{r}
+
+bdd_bloc_1A_2A %>%
+  select(bloc_an, annee_ecole,contains("prop12_stat")) %>%  
+  filter(annee_ecole == "2A") %>% 
+  arrange(desc(bloc_an)) %>%  
+  kable(format = "html", caption = "Nombre d'élèves selon la filière d'entrée",
+        align = "c") %>%  
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed"),
+    full_width = FALSE,
+    position = "center",
+    fixed_thead = TRUE
+  ) %>%
+  column_spec(1, width = "8em")
+
+```
+
+```{r}
+
+bdd_bloc_1A_2A %>%
+  select(bloc_an, annee_ecole, contains("prop12_stat")) %>%
+  filter(annee_ecole == "2A") %>%
+  arrange(desc(bloc_an)) %>%
+  pivot_longer(
+    cols = contains("prop12_stat"),
+    names_to = "filiere",
+    values_to = "moyenne"
+  ) %>%
+  ggplot(aes(x = filiere, y = moyenne, fill = bloc_an)) +
+  geom_col(position = "dodge") +
+  labs(
+    title = "1A : Moyennes UE Stat",
+    x = "Filière d'entrée",
+    y = "Moyenne"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 30, hjust = 1),
+    plot.title = element_text(hjust = 0.5)
+  )
+
+```
+
+- UE Info
+
+```{r}
+
+bdd_bloc_1A_2A %>%
+  select(bloc_an, annee_ecole,contains("prop12_inf")) %>%  
+  filter(annee_ecole == "2A") %>% 
+  arrange(desc(bloc_an)) %>%  
+  kable(format = "html", caption = "Nombre d'élèves selon la filière d'entrée",
+        align = "c") %>%  
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed"),
+    full_width = FALSE,
+    position = "center",
+    fixed_thead = TRUE
+  ) %>%
+  column_spec(1, width = "8em")
+```
+
+```{r}
+
+bdd_bloc_1A_2A %>%
+  select(bloc_an, annee_ecole, contains("prop12_info")) %>%
+  filter(annee_ecole == "2A") %>%
+  arrange(desc(bloc_an)) %>%
+  pivot_longer(
+    cols = contains("prop12_info"),
+    names_to = "filiere",
+    values_to = "moyenne"
+  ) %>%
+  ggplot(aes(x = filiere, y = moyenne, fill = bloc_an)) +
+  geom_col(position = "dodge") +
+  labs(
+    title = "1A : Moyennes UE Info",
+    x = "Filière d'entrée",
+    y = "Moyenne"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 30, hjust = 1),
+    plot.title = element_text(hjust = 0.5)
+  )
+
+```
+
+- UE Éco
+
+```{r}
+
+bdd_bloc_1A_2A %>%
+  select(bloc_an, annee_ecole,contains("prop12_eco")) %>%  
+  filter(annee_ecole == "2A") %>% 
+  arrange(desc(bloc_an)) %>%  
+  kable(format = "html", caption = "Nombre d'élèves selon la filière d'entrée",
+        align = "c") %>%  
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed"),
+    full_width = FALSE,
+    position = "center",
+    fixed_thead = TRUE
+  ) %>%
+  column_spec(1, width = "8em")
+```
+
+```{r}
+
+bdd_bloc_1A_2A %>%
+  select(bloc_an, annee_ecole, contains("prop12_eco")) %>%
+  filter(annee_ecole == "2A") %>%
+  arrange(desc(bloc_an)) %>%
+  pivot_longer(
+    cols = contains("prop12_eco"),
+    names_to = "filiere",
+    values_to = "moyenne"
+  ) %>%
+  ggplot(aes(x = filiere, y = moyenne, fill = bloc_an)) +
+  geom_col(position = "dodge") +
+  labs(
+    title = "1A : Moyennes UE Éco",
+    x = "Filière d'entrée",
+    y = "Moyenne"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 30, hjust = 1),
+    plot.title = element_text(hjust = 0.5)
+  )
+
+```
+
+- UE Humanités
+
+```{r}
+
+bdd_bloc_1A_2A %>%
+  select(bloc_an, annee_ecole,contains("prop12_hum")) %>%  
+  filter(annee_ecole == "2A") %>% 
+  arrange(desc(bloc_an)) %>%  
+  kable(format = "html", caption = "Nombre d'élèves selon la filière d'entrée",
+        align = "c") %>%  
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed"),
+    full_width = FALSE,
+    position = "center",
+    fixed_thead = TRUE
+  ) %>%
+  column_spec(1, width = "8em")
+```
+
+```{r}
+
+bdd_bloc_1A_2A %>%
+  select(bloc_an, annee_ecole, contains("prop12_hum")) %>%
+  filter(annee_ecole == "1A") %>%
+  arrange(desc(bloc_an)) %>%
+  pivot_longer(
+    cols = contains("prop12_hum"),
+    names_to = "filiere",
+    values_to = "moyenne"
+  ) %>%
+  ggplot(aes(x = filiere, y = moyenne, fill = bloc_an)) +
+  geom_col(position = "dodge") +
+  labs(
+    title = "1A : Moyennes UE Humanités",
+    x = "Filière d'entrée",
+    y = "Moyenne"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 30, hjust = 1),
+    plot.title = element_text(hjust = 0.5)
+  )
+
+```
+
+## 3. Rang d'intégration et scolarité à l'ENSAI
+
+### 2.1. Évolution des écarts de rang d'intégration entre attachés et ingénieurs (filière mathématiques)
+
+Afin de comparer les rangs année par année et par filière, un rang standardisé est calculé pour chaque année. Il correspond à son rang au concours commun divisé par le rang maximum d'intégration à l'Ensai au concours commun.
+
+```{r}
+
+bdd_1A <- bdd[bdd$annee_ecole %in% c("1A"),]
+
+bdd_1A_unique <- bdd_1A[!duplicated(cbind(bdd_1A$id_crypte,bdd_1A$annee)),]
+
+bdd_plot <- bdd_1A_unique %>% 
+  filter(!is.na(ccc_ran_com)) %>% 
+  group_by(annee) %>% 
+  mutate(max_annee = max(ccc_ran_com)) %>%   # max calculé par année
+  group_by(annee, statut_etudiant) %>% 
+  summarise(
+    nb_math = n(),
+    rang_moy_math = round(100 * mean(ccc_ran_com / max_annee), 1),
+    rang_med_math = round(100 * median(ccc_ran_com / max_annee), 1),
+    .groups = "drop"
+  )
+
+bdd_plot %>%
+  kable(format = "html", caption = "Rangs d'intégration moyen et médian standardisés") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = FALSE, position = "center")
+
+```
+
+
+```{r}
+
+ggplot(bdd_plot, aes(x = annee, y = rang_moy_math,
+                        color = statut_etudiant, group = statut_etudiant)) +
+  geom_line(size = 1) +
+  geom_point(size = 2) +
+  labs(
+    title = "Évolution du rang moyen au concours d'entrée spé maths par statut étudiant",
+    x = "Année",
+    y = "Rang moyen (%)",
+    color = "Statut étudiant"
+  ) +
+  theme_minimal(base_size = 10) +
+  theme(
+    plot.title = element_text(face = "bold"),
+    legend.position = "bottom"
+  )
+
+```
+
+```{r}
+
+bdd_box <- bdd_1A_unique %>%
+  filter(!is.na(ccc_ran_com)) %>%
+  group_by(annee) %>%
+  mutate(rang_std = 100 * ccc_ran_com / max(ccc_ran_com)) %>%  # standardisation par année
+  ungroup() %>%
+  mutate(annee = factor(annee))
+
+ggplot(bdd_box,
+       aes(x = annee, y = rang_std, fill = statut_etudiant)) +
+  geom_boxplot(width = 0.7, alpha = 0.6, outlier.shape = NA, 
+               position = position_dodge(width = 0.8)) +
+  geom_jitter(aes(color = statut_etudiant),
+              alpha = 0.35, size = 1,
+              position = position_jitterdodge(jitter.width = 0.15, dodge.width = 0.8)) +
+  labs(
+    title = "Dispersion du rang standardisé par année et statut étudiant",
+    x = "Année",
+    y = "Rang standardisé (%)",
+    fill = "Statut étudiant",
+    color = "Statut étudiant"
+  ) +
+  scale_y_continuous(limits = c(0, 100)) +
+  theme_minimal(base_size = 10) +
+  theme(
+    plot.title = element_text(face = "bold"),
+    legend.position = "bottom"
+  )
+
+
+```
+
+## 3.2. Rang d'intégration et redoublement
+
+À ce stade, le champ est celui des intégrants par la voie du concours externe mathématiques.
+
+```{r}
+
+bdd %>%
+  filter(!is.na(ccc_ran_com)) %>% 
+  group_by(bloc_an,redoublement) %>%
+  summarise(
+    n = n(),
+    moyenne = round(100*mean(ccc_ran_com_standard, na.rm = TRUE), 1),
+    mediane = round(100 * median(ccc_ran_com_standard, na.rm = TRUE), 1),
+    ecart_type = round(100*(sd(ccc_ran_com_standard, na.rm = TRUE)),1)
+  )
+
+```
+
+```{r}
+ggplot(bdd, aes(x = factor(redoublement), y = ccc_ran_com_standard, fill = factor(redoublement))) +
+  geom_boxplot(alpha = 0.7, outlier.alpha = 0.3) +
+  facet_wrap(~ bloc_an) +
+  labs(x = "Redoublement (0=non, 1=oui)", y = "Rang harmonisé standardisé", fill = "Redoublement") +
+  theme_minimal()
+```
+
+
+```{r}
+
+resume <- bdd %>%
+  group_by(annee, redoublement) %>%
+  summarise(
+    moyenne = mean(ccc_ran_com_standard, na.rm = TRUE),
+    se = sd(ccc_ran_com_standard, na.rm = TRUE) / sqrt(n()),
+    .groups = "drop"
+  )
+
+ggplot(resume, aes(x = annee, y = moyenne, color = factor(redoublement), group = redoublement)) +
+  geom_point() +
+  geom_line() +
+  geom_errorbar(aes(ymin = moyenne - se, ymax = moyenne + se), width = 0.2) +
+  labs(x = "Année", y = "Moyenne du rang harmonisé", color = "Redoublement") +
+  theme_minimal()
+```
+
+```{r}
+
+cor.test(bdd$ccc_ran_com_standard, bdd$redoublement, method = "pearson")
+
+```
+
+```{r}
+bdd %>%
+  filter(!is.na(ccc_ran_com)) %>% 
+  group_by(annee) %>%
+  summarise(corr = cor(ccc_ran_com_standard, redoublement, method = "pearson"))
+```
+
+
+Chaque année, les étudiants redoublants (1) ont un rang harmonisé plus élevé (moins bon classement) que les non-redoublants (0).
+
+Exemple 2015 : non-redoublants ≈ 64 vs redoublants ≈ 78.
+Exemple 2019 : non-redoublants ≈ 57 vs redoublants ≈ 64.
+
+Le décalage moyen est d’environ +7 à +15 points pour les redoublants.
+
+L’écart-type est un peu plus petit chez les redoublants → leur distribution est plus concentrée.
+
+La médiane suit la même logique que la moyenne.
+
+Toutefois, la relation semble se modifier dans le temps, avec un contexte particulier en 2023-2024 (effet CCNIP et logique de classement différente, à creuser).
+
+Sur la période d'ensemble, le lien est hautement significatif mais la corrélation est plutôt faible (coefficient de corrélation linéaire de Pearson de ), autour de 12, mais tend à baisser (voire même s'inverser en 2024 - un étudiant bien classé a dû redoubler)
+
+```{r}
+bdd_math <- bdd %>% 
+  filter(!is.na(ccc_ran_com))
+
+mod_logit <- glm(redoublement ~ ccc_ran_com_standard,
+                 data = bdd_math, family = binomial)
+
+summary(mod_logit)
+```
+
+```{r}
+exp(coef(mod_logit))  # Odds Ratios
+```
+Chaque point supplémentaire au rang standardisé augmente le risque de redoublement de 4,5 %
+
+```{r}
+exp(cbind(OR = coef(mod_logit), confint(mod_logit)))
+```
+
+```{r}
+newdata <- data.frame(ccc_ran_com_standard = seq(0, 1, length.out = 100))
+newdata$pred <- predict(mod_logit, newdata, type = "response")
+
+bdd_plot <- bdd_math %>%
+  mutate(bin = cut(ccc_ran_com_standard, breaks = 20)) %>%
+  group_by(bin) %>%
+  summarise(
+    x = mean(ccc_ran_com_standard, na.rm = TRUE),
+    prop_redouble = mean(redoublement, na.rm = TRUE)
+  )
+
+ggplot() +
+  geom_point(data = bdd_plot, aes(x = x, y = prop_redouble), color = "blue") +
+  geom_line(data = newdata, aes(x = ccc_ran_com_standard, y = pred), color = "red", size = 1) +
+  labs(x = "Rang harmonisé standardisé",
+       y = "Proportion / Probabilité de redoublement",
+       title = "Redoublement observé vs modèle logistique") +
+  theme_minimal()
+```
+
+
+```{r}
+library(pROC)
+pred <- predict(mod_logit, type = "response")
+roc_obj <- roc(bdd_math$redoublement, pred)
+auc(roc_obj)   # entre 0.5 (hasard) et 1 (parfait)
+```
+# 4. Les matières mathématiques et la filière d'origine
+
+## 4.2. En statique
+
+```{r}
+
+######Étudier la réussite aux matières mathématiques en fonction de la filière d'origine / mode d'intégration###
+bdd_spécial_mat <- bdd_1A_2A_unique %>%
+  filter(!is.na(MSS1), annee_ecole=="1A") %>%   # on enlève les NA
+  mutate(spe_entree = factor(spe_entree))
+
+ggplot(bdd_spécial_mat, aes(x = spe_entree, y = MSS1, fill = spe_entree)) +
+  geom_boxplot() +
+  labs(title = "Réussite en mathématiques du semestre 1 selon la filière d'origine",
+       x = "Filière d'origine",
+       y = "Note en mathématiques") +
+  theme_minimal()
+
+```
+
+
+```{r}
+anova_filiere <- aov(MSS1 ~ spe_entree, data = bdd_spécial_mat)
+summary(anova_filiere)
+TukeyHSD(anova_filiere)
+```
+
+```{r}
+bdd_spécial_mat_periode <- bdd_1A_2A_unique %>%
+  filter(!is.na(MSS1),
+         annee_ecole=="1A") %>%
+  mutate(across(c(spe_entree, bloc_an), as.factor))
+
+
+ggplot(bdd_spécial_mat_periode, aes(x = spe_entree, y = MSS1, fill = bloc_an)) +
+  geom_boxplot() +
+  labs(title = "Réussite en mathématiques selon la filière d'origine",
+       x = "Filière d'origine",
+       y = "Note en mathématiques") +
+  theme_minimal()
+```
+
+## 4.2. En évolution
+
+```{r}
+donnees_maths <- bdd_1A_2A_unique %>%
+  select(annee_ecole, MSS1, MSS2,MIS1,MIS2 ,
+         sexe,spe_entree, moyenne_generale, AV,
+         bac_mention, paysnai, redoublement,bloc_an) %>%
+  mutate(
+    # Calcul des moyennes par domaine mathématique
+    MSS_moyenne = ifelse(!is.na(MSS1) & !is.na(MSS2), (MSS1 + MSS2) / 2,
+                         ifelse(!is.na(MSS1), MSS1, MSS2)),
+
+    # Évolution entre semestres
+    MSS_evolution = MSS2 - MSS1,
+
+    # Indicateurs de réussite (seuil à 10/20)
+    MSS_reussi = case_when(
+      MSS_moyenne >= 10 ~ "Réussi",
+      MSS_moyenne < 10 ~ "Échec",
+      TRUE ~ "Non évalué"
+
+    ),
+    # Niveau de performance
+    niveau_maths = case_when(
+      MSS_moyenne >= 16 ~ "Excellent",
+      MSS_moyenne >= 14 ~ "Très bien",
+      MSS_moyenne >= 12 ~ "Bien",
+      MSS_moyenne >= 10 ~ "Assez bien",
+      MSS_moyenne < 10 ~ "Insuffisant",
+      TRUE ~ "Non évalué"
+    )
+  )
+
+
+# 2. STATISTIQUES DESCRIPTIVES PAR ANNÉE ET SEMESTRE
+stats_maths_annee <- donnees_maths %>%
+  group_by(annee_ecole,bloc_an) %>%
+  summarise(
+    n_etudiants = n(),
+    # Statistiques MSS (Math/Stats/Sciences)
+    MSS1_moy = round(mean(MSS1, na.rm = TRUE), 2),
+    MSS2_moy = round(mean(MSS2, na.rm = TRUE), 2),
+    MSS_evolution_moy = round(mean(MSS_evolution, na.rm = TRUE), 2),
+    MSS_taux_reussite = round(mean(MSS_moyenne >= 10, na.rm = TRUE) * 100, 1)
+  )
+
+cat("\n=== STATISTIQUES PAR ANNÉE D'ÉCOLE ===\n")
+print(stats_maths_annee)
+
+```
+```{r}
+progression_analyse <- donnees_maths %>%
+  filter(!is.na(MSS1) & !is.na(MSS2)) %>%
+  group_by(annee_ecole,bloc_an) %>%
+  summarise(
+    n = n(),
+    # Tests de progression
+    MSS_progression = mean(MSS2 > MSS1, na.rm = TRUE) * 100,
+
+  )
+
+cat("\n=== ANALYSE DE LA PROGRESSION ENTRE SEMESTRES ===\n")
+print(progression_analyse)
+```
+## 4.3. Selon le sexe
+
+```{r}
+analyse_sexe <- donnees_maths %>%
+  filter(!is.na(sexe)) %>%
+  group_by(annee_ecole, sexe,bloc_an) %>%
+  summarise(
+    n = n(),
+    MSS_moyenne = round(mean(MSS_moyenne, na.rm = TRUE), 2),
+    # Tests de progression
+    MSS_progression = mean(MSS2 > MSS1, na.rm = TRUE) * 100,
+
+    # Ampleur moyenne de la progression
+    MSS_gain_moyen = round(mean(MSS_evolution, na.rm = TRUE), 2)
+  )
+
+cat("\n=== ANALYSE PAR SEXE ===\n")
+print(analyse_sexe)
+
+
+```
+
+4.4. Selon la filière d'origine
+
+```{r}
+if(!all(is.na(donnees_maths$spe_entree))) {
+  analyse_concours <- donnees_maths %>%
+    filter(!is.na(spe_entree)) %>%
+    group_by(annee_ecole, spe_entree,bloc_an) %>%
+    summarise(
+      n = n(),
+      MSS_moyenne = round(mean(MSS_moyenne, na.rm = TRUE), 2),
+      .groups = 'drop'
+    ) %>%
+    filter(n >= 5)  # Garder seulement les groupes avec au moins 5 étudiants
+
+  cat("\n=== ANALYSE PAR FILIERE D'ORIGINE ===\n")
+  print(analyse_concours)
+}
+```
+
+
+# 4.4. Selon le niveau au bac
+
+```{r}
+if(!all(is.na(donnees_maths$bac_mention))) {
+  analyse_bac_mention <- donnees_maths %>%
+    filter(!is.na(bac_mention)) %>%
+    group_by(annee_ecole, bac_mention,bloc_an) %>%
+    summarise(
+      n = n(),
+      MSS_moyenne = round(mean(MSS_moyenne, na.rm = TRUE), 2),
+      MSS_gain_moyen = round(mean(MSS_evolution, na.rm = TRUE), 2),
+      .groups = 'drop'
+    ) %>%
+    filter(n >= 3)  # Garder seulement les groupes avec au moins 3 étudiants
+
+  cat("\n=== ANALYSE PAR MENTION AU BAC ===\n")
+  print(analyse_bac_mention)
+}
+```
+
+## 4.5. Étudiants en difficulté dans les matières mathématiques
+
+```{r}
+etudiants_difficulte <- donnees_maths %>%
+  filter(MSS_moyenne < 10, !is.na(MSS_moyenne)) %>%
+  group_by(annee_ecole,bloc_an) %>%
+  summarise(
+    n_echec = n(),
+    MSS_moyenne_echec = round(mean(MSS_moyenne, na.rm = TRUE), 2),
+    pourcentage_progression = round(mean(MSS2 > MSS1, na.rm = TRUE) * 100, 1),
+    gain_moyen_echec = round(mean(MSS_evolution, na.rm = TRUE), 2),
+    .groups = 'drop'
+  )
+
+cat("\n=== ANALYSE DES ÉTUDIANTS EN DIFFICULTÉ (< 10) ===\n")
+print(etudiants_difficulte)
+```
+
+
+## 4.6. Distribution des notes stats par année,par blocs et semestre
+
+```{r}
+p1 <- donnees_maths %>%
+  select(annee_ecole, MSS1, MSS2, bloc_an) %>%
+  pivot_longer(cols = c(MSS1, MSS2), names_to = "semestre", values_to = "note") %>%
+  filter(!is.na(note)) %>%
+  ggplot(aes(x = annee_ecole, y = note, fill = semestre)) +
+  geom_boxplot(alpha = 0.7) +
+  scale_fill_manual(values = c("MSS1" = "#3498db", "MSS2" = "#e74c3c"),
+                    labels = c("MSS1" = "Semestre 1", "MSS2" = "Semestre 2")) +
+  labs(title = "Distribution des notes MSS par année, semestre et bloc",
+       x = "Année d'école", y = "Note MSS", fill = "Semestre") +
+  facet_wrap(~ bloc_an) +   # ➡️ séparation par bloc
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, size = 14, face = "bold"))
+
+print(p1)
+```
+
+## 4.7. Comparaison des semestres
+
+```{r}
+donnees_long <- donnees_maths %>%
+  pivot_longer(cols = c(MSS1, MSS2),
+               names_to = "semestre",
+               values_to = "note") %>%
+  filter(!is.na(note))   # enlever les manquants
+
+
+anova_model <- aov(note ~ semestre * bloc_an, data = donnees_long)
+summary(anova_model)
+```
+Il existe une différence significative entre les semestres (p=8.32e-13), le semestre 2 ayant des notes plus élevées en moyenne.en moyenne, les notes de MSS sont significativement plus hautes au semestre 2 qu’au semestre 1. 
+
+Les résultats évoluent aussi significativement selon les blocs d’années (2.84e-13), indiquant une amélioration globale au fil du temps.les performances changent selon les périodes (meilleures dans les blocs récents). 
+
+Enfin, l’interaction est significative (p=6.01e-05), ce qui montre que l’écart entre semestre 1 et semestre 2 varie selon les périodes : faible avant 2020, plus marqué après 2022.la différence entre S1 et S2 n’est pas la même selon les périodes.
+
+# 5. Niveau d'anglais et scolarité à l'ENSAI
+
+```{r}
+#effet du niveau d'anglais sur les résultats scolaires
+
+donnees_anglais <- bdd_1A_2A_unique %>%
+  select(annee_ecole, certif_anglais_org, certif_anglais_score,
+         moyenne_generale, AV, sexe, filiere_1A, concours_origine,
+         bac_mention, paysnai, nationalite, redoublement,spe_entree,bloc_an) %>%
+  mutate(
+    # Nettoyage du score TOEIC
+    score_anglais = case_when(
+      !is.na(certif_anglais_score) & certif_anglais_score != "" ~
+        as.numeric(certif_anglais_score),
+      TRUE ~ NA_real_
+    ),
+
+    # Indicateur de certification
+    a_certification = case_when(
+      !is.na(certif_anglais_org) & certif_anglais_org != "" ~ "Oui",
+      TRUE ~ "Non"
+    ),
+
+    # Catégorisation du niveau TOEIC
+    niveau_toeic = case_when(
+      is.na(score_anglais) ~ "Non renseigné",
+      score_anglais >= 900 ~ "Excellent (≥900)",
+      score_anglais >= 800 ~ "Très bien (800-899)",
+      score_anglais >= 700 ~ "Bien (700-799)",
+      score_anglais >= 600 ~ "Correct (600-699)",
+      score_anglais < 600 ~ "Insuffisant (<600)",
+      TRUE ~ "Non renseigné"
+    ),
+
+    # Indicateur d'étudiant étranger
+    etudiant_etranger = case_when(
+      nationalite != "Français" | paysnai != "FRANCE" ~ "Étranger",
+      TRUE ~ "Français"
+    ),
+
+    # Indicateur de réussite
+    reussite = case_when(
+      AV == "1" ~ "Réussite",
+      AV == "0" ~ "Échec",
+      TRUE ~ "Non renseigné"
+    ),
+
+    # Niveau de performance générale
+    niveau_performance = case_when(
+      moyenne_generale >= 16 ~ "Excellent",
+      moyenne_generale >= 14 ~ "Très bien",
+      moyenne_generale >= 12 ~ "Bien",
+      moyenne_generale >= 10 ~ "Assez bien",
+      moyenne_generale < 10 ~ "Insuffisant",
+      TRUE ~ "Non évalué"
+    )
+  )
+```
+
+## 5.1. Niveau d'anglais des élèves à l'ENSAI
+
+```{r}
+cat("=== APERÇU DES DONNÉES ANGLAIS ===\n")
+cat("Nombre total d'observations:", nrow(donnees_anglais), "\n")
+cat("Étudiants avec certification anglais:", sum(donnees_anglais$a_certification == "Oui", na.rm = TRUE), "\n")
+cat("Scores TOEIC disponibles:", sum(!is.na(donnees_anglais$score_anglais)), "\n")
+```
+```{r}
+# Distribution des certifications
+distrib_certif <- donnees_anglais %>%
+  count(annee_ecole, certif_anglais_org) %>%
+  filter(!is.na(certif_anglais_org)) %>%
+  arrange(annee_ecole, desc(n))
+
+cat("\n=== DISTRIBUTION DES CERTIFICATIONS ===\n")
+print(distrib_certif)
+```
+
+```{r}
+# Statistiques des scores TOEIC par année
+stats_toeic_annee <- donnees_anglais %>%
+  filter(!is.na(score_anglais)) %>%
+  group_by(annee_ecole,bloc_an) %>%
+  summarise(
+    n_scores = n(),
+    score_moyen = round(mean(score_anglais), 0),
+    score_median = round(median(score_anglais), 0),
+    score_min = min(score_anglais),
+    score_max = max(score_anglais),
+    ecart_type = round(sd(score_anglais), 0),
+    .groups = 'drop'
+  )
+
+cat("\n=== STATISTIQUES SCORES TOEIC PAR ANNÉE ===\n")
+print(stats_toeic_annee)
+```
+## 5.2. Niveau d'anglais et réussite
+
+### 5.2.1 Certification et moyenne générale
+
+```{r}
+# Comparaison moyenne générale selon la certification
+impact_certification <- donnees_anglais %>%
+  group_by(annee_ecole, a_certification) %>%
+  summarise(
+    n = n(),
+    moyenne_gen = round(mean(moyenne_generale, na.rm = TRUE), 2),
+    mediane_gen = round(median(moyenne_generale, na.rm = TRUE), 2),
+    taux_reussite = round(mean(AV == "1", na.rm = TRUE) * 100, 1),
+    .groups = 'drop'
+  )
+
+cat("\n=== IMPACT DE LA CERTIFICATION SUR LA PERFORMANCE ===\n")
+print(impact_certification)
+```
+
+### 5.2.2. Niveau d'anglais et moyenne générale
+
+```{r}
+# Analyse par niveau de TOEIC
+impact_niveau_toeic <- donnees_anglais %>%
+  filter(!is.na(score_anglais)) %>%
+  group_by(annee_ecole, niveau_toeic,bloc_an) %>%
+  summarise(
+    n = n(),
+    moyenne_gen = round(mean(moyenne_generale, na.rm = TRUE), 2),
+    taux_reussite = round(mean(AV == "1", na.rm = TRUE) * 100, 1),
+    score_toeic_moyen = round(mean(score_anglais), 0),
+    .groups = 'drop'
+  ) %>%
+  filter(n >= 3)
+
+cat("\n=== IMPACT DU NIVEAU TOEIC SUR LA PERFORMANCE ===\n")
+print(impact_niveau_toeic)
+```
+
+### 5.2.3 Lien avec le sexe
+
+```{r}
+# Impact par sexe
+analyse_sexe_anglais <- donnees_anglais %>%
+  filter(!is.na(sexe), !is.na(score_anglais)) %>%
+  group_by(annee_ecole, sexe) %>%
+  summarise(
+    n = n(),
+    score_toeic_moyen = round(mean(score_anglais), 0),
+    moyenne_gen = round(mean(moyenne_generale, na.rm = TRUE), 2),
+    .groups = 'drop'
+  )
+
+cat("\n=== ANALYSE PAR SEXE ===\n")
+print(analyse_sexe_anglais)
+```
+
+### 5.2.4. Lien avec la spécialité d'entrée
+
+```{r}
+analyse_filiere_anglais <- donnees_anglais %>%
+  filter(!is.na(spe_entree), !is.na(score_anglais)) %>%
+  group_by(annee_ecole, spe_entree) %>%
+  summarise(
+    n = n(),
+    score_toeic_moyen = round(mean(score_anglais), 0),
+    moyenne_gen = round(mean(moyenne_generale, na.rm = TRUE), 2),
+    .groups = 'drop'
+  ) %>%
+  filter(n >= 3)
+
+cat("\n=== ANALYSE PAR SPE_ENTREE ===\n")
+print(analyse_filiere_anglais)
+```
+
+### 5.2.5. Lien avec la nationalité
+
+```{r}
+# Impact selon l'origine (français vs étranger)
+analyse_origine <- donnees_anglais %>%
+  filter(!is.na(score_anglais)) %>%
+  group_by(annee_ecole, etudiant_etranger) %>%
+  summarise(
+    n = n(),
+    score_toeic_moyen = round(mean(score_anglais), 0),
+    moyenne_gen = round(mean(moyenne_generale, na.rm = TRUE), 2),
+    taux_reussite = round(mean(AV == "1", na.rm = TRUE) * 100, 1),
+    .groups = 'drop'
+  )
+
+cat("\n=== ANALYSE PAR ORIGINE ===\n")
+print(analyse_origine)
+```
+### 5.2.6. Quelques représentations graphiques
+
+```{r}
+# Graphique 1: Distribution des scores TOEIC par année
+p1 <- donnees_anglais %>%
+  filter(!is.na(score_anglais)) %>%
+  ggplot(aes(x = annee_ecole, y = score_anglais, fill = annee_ecole)) +
+  geom_boxplot(alpha = 0.7) +
+  geom_jitter(width = 0.2, alpha = 0.4, size = 0.8) +
+  scale_fill_brewer(type = "qual", palette = "Set2") +
+  labs(title = "Distribution des scores TOEIC par année d'école",
+       x = "Année d'école", y = "Score TOEIC", fill = "Année") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, size = 14, face = "bold"))
+
+print(p1)
+```
+
+```{r}
+# Graphique 2: Relation score TOEIC vs moyenne générale
+p2 <- donnees_anglais %>%
+  filter(!is.na(score_anglais), !is.na(moyenne_generale)) %>%
+  ggplot(aes(x = score_anglais, y = moyenne_generale)) +
+  geom_point(aes(color = annee_ecole), alpha = 0.6, size = 2) +
+  geom_smooth(method = "lm", se = TRUE, color = "red", size = 1) +
+  facet_wrap(~annee_ecole) +
+  scale_color_brewer(type = "qual", palette = "Set1") +
+  labs(title = "Relation entre score TOEIC et moyenne générale",
+       x = "Score TOEIC", y = "Moyenne générale", color = "Année") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, size = 14, face = "bold"))
+
+print(p2)
+
+```
+
+```{r}
+# Graphique 3: Moyenne générale par niveau TOEIC
+niveau_order <- c("Insuffisant (<600)", "Correct (600-699)", "Bien (700-799)",
+                  "Très bien (800-899)", "Excellent (≥900)")
+
+p3 <- donnees_anglais %>%
+  filter(!is.na(score_anglais), niveau_toeic != "Non renseigné") %>%
+  mutate(niveau_toeic = factor(niveau_toeic, levels = niveau_order)) %>%
+  ggplot(aes(x = niveau_toeic, y = moyenne_generale, fill = niveau_toeic)) +
+  geom_boxplot(alpha = 0.7) +
+  facet_wrap(~annee_ecole) +
+  scale_fill_manual(values = c("#e74c3c", "#f39c12", "#f1c40f", "#2ecc71", "#27ae60")) +
+  labs(title = "Moyenne générale par niveau TOEIC",
+       x = "Niveau TOEIC", y = "Moyenne générale", fill = "Niveau TOEIC") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, size = 14, face = "bold"),
+        axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "none")
+
+print(p3)
+```
+
+
+
+```{r}
+# Graphique 4: Comparaison avec/sans certification
+p4 <- donnees_anglais %>%
+  filter(!is.na(moyenne_generale)) %>%
+  ggplot(aes(x = a_certification, y = moyenne_generale, fill = a_certification)) +
+  geom_boxplot(alpha = 0.7) +
+  geom_jitter(width = 0.2, alpha = 0.3) +
+  facet_wrap(~annee_ecole) +
+  scale_fill_manual(values = c("Non" = "#95a5a6", "Oui" = "#3498db")) +
+  labs(title = "Performance selon la présence d'une certification anglais",
+       x = "Certification anglais", y = "Moyenne générale",
+       fill = "Certification") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, size = 14, face = "bold"))
+
+print(p4)
+```
+
+5.2.7. Corrélations et tests
+
+```{r}
+# Corrélation score TOEIC vs moyenne générale
+correlation_analysis <- donnees_anglais %>%
+  filter(!is.na(score_anglais), !is.na(moyenne_generale)) %>%
+  group_by(annee_ecole) %>%
+  summarise(
+    n = n(),
+    correlation = round(cor(score_anglais, moyenne_generale), 3),
+    p_value = if(n() > 2) round(cor.test(score_anglais, moyenne_generale)$p.value, 4) else NA,
+    significatif = case_when(
+      is.na(p_value) ~ "Non testé",
+      p_value < 0.001 ~ "*** (p < 0.001)",
+      p_value < 0.01 ~ "** (p < 0.01)",
+      p_value < 0.05 ~ "* (p < 0.05)",
+      TRUE ~ "Non significatif"
+    ),
+    .groups = 'drop'
+  )
+
+cat("\n=== CORRÉLATION SCORE TOEIC - MOYENNE GÉNÉRALE ===\n")
+print(correlation_analysis)
+```
+
+```{r}
+# Corrélation niveau TOEIC vs moyenne générale
+correlation_analysis1 <- donnees_anglais %>%
+  filter(!is.na(score_anglais),
+         !is.na(moyenne_generale),
+         niveau_toeic != "Non renseigné") %>%
+  mutate(niveau_toeic = factor(niveau_toeic, levels = niveau_order),
+         niveau_num = as.numeric(niveau_toeic)) %>%  # conversion en numérique
+  group_by(annee_ecole) %>%
+  summarise(
+    n = n(),
+    correlation = if (n() > 2) round(cor(niveau_num, moyenne_generale, method = "spearman"), 3) else NA,
+    p_value = if (n() > 2) round(cor.test(niveau_num, moyenne_generale, method = "spearman")$p.value, 4) else NA,
+    significatif = case_when(
+      is.na(p_value) ~ "Non testé",
+      p_value < 0.001 ~ "*** (p < 0.001)",
+      p_value < 0.01 ~ "** (p < 0.01)",
+      p_value < 0.05 ~ "* (p < 0.05)",
+      TRUE ~ "Non significatif"
+    ),
+    .groups = "drop"
+  )
+cat("\n=== CORRÉLATION SCORE TOEIC - MOYENNE GÉNÉRALE ===\n")
+print(correlation_analysis1)
+```
+
+Les coefficients (~0.11) indiquent une relation très faible mais positive entre les deux variables. 
+
+Autrement dit, les étudiants avec un meilleur score TOEIC ont tendance à avoir une meilleure moyenne générale, mais cette tendance est loin d’être forte. 
+
+Les résultats mettent en évidence une corrélation positive mais faible entre le score TOEIC et la moyenne générale, aussi bien en 1A (r = 0.11, p < 0.01) qu’en 2A (r = 0.113, p < 0.001). Bien que statistiquement significative en raison du grand nombre d’observations, la force de la relation reste limitée : le score TOEIC n’explique qu’environ 1% de la variance des résultats académiques. Cela suggère que la maîtrise de l’anglais est associée aux performances générales, mais qu’elle n’en constitue pas un facteur déterminant.
+
+```{r}
+# Corrélation niveau TOEIC vs moyenne générale par bloc année
+
+correlation_analysis2 <- donnees_anglais %>%
+  filter(!is.na(score_anglais),
+         !is.na(moyenne_generale),
+         niveau_toeic != "Non renseigné") %>%
+  mutate(niveau_toeic = factor(niveau_toeic, levels = niveau_order)) %>%
+  group_by(annee_ecole, bloc_an) %>%
+  summarise(
+    n = n(),
+    correlation = if (n() > 2) round(cor(score_anglais, moyenne_generale, method = "pearson"), 3) else NA,
+    p_value = if (n() > 2) round(cor.test(score_anglais, moyenne_generale, method = "pearson")$p.value, 4) else NA,
+    significatif = case_when(
+      is.na(p_value) ~ "Non testé",
+      p_value < 0.001 ~ "*** (p < 0.001)",
+      p_value < 0.01 ~ "** (p < 0.01)",
+      p_value < 0.05 ~ "* (p < 0.05)",
+      TRUE ~ "Non significatif"
+    ),
+    .groups = "drop"
+  )
+cat("\n=== CORRÉLATION SCORE TOEIC - MOYENNE GÉNÉRALE ===\n")
+print(correlation_analysis2)
+```
+L’analyse met en évidence une corrélation globalement faible entre score TOEIC et moyenne générale, variant selon les périodes et les années d’école. En 1A, la relation est le plus souvent non significative, ce qui suggère que la maîtrise de l’anglais n’est pas un facteur déterminant de la réussite académique au début du cursus. En revanche, en 2A, la corrélation devient significative dans certains blocs (notamment 2018–2020 avec r = 0.212, p < 0.001), indiquant qu’un meilleur score TOEIC est associé à une moyenne générale légèrement plus élevée. Toutefois, même dans ces cas, la part de variance expliquée reste faible (<5%), soulignant que la performance académique dépend principalement d’autres facteurs.
+
+

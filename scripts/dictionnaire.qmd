@@ -16,7 +16,7 @@ execute:
 :::
 
 ```{r setup, include=FALSE}
-pkgs <- c("arrow", "DT")
+pkgs <- c("arrow", "DT","here")
 
 for (pkg in pkgs) {
   if (!requireNamespace(pkg, quietly = TRUE)) {
