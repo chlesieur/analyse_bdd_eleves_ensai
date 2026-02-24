@@ -1,5 +1,5 @@
 ---
-title: "Analyses sur la période 2015-2024"
+title: "Analyses sur la période 2015-2025"
 format: html
 ---
 
@@ -21,10 +21,10 @@ invisible(lapply(pkgs, library, character.only = TRUE))
 ```
 
 ```{r}
-bdd <- read_parquet(here("data","bdd_2015_2024.parquet")) %>% filter(annee_ecole != "Autres")
+bdd <- read_parquet(here("data","bdd_2015_2025.parquet")) %>% filter(annee_ecole != "Autres")
 
 # creation boucles sortie stat par bloc annee
-bdd$bloc_an<- ifelse(bdd$annee %in% c(2015,2016,2017),"2015-2017",ifelse (bdd$annee %in% c(2018,2019,2020),"2018-2020",ifelse(bdd$annee %in% c(2021,2022),"2021-2022","2023-2024")))
+bdd$bloc_an<- ifelse(bdd$annee %in% c(2015,2016,2017),"2015-2017",ifelse (bdd$annee %in% c(2018,2019,2020),"2018-2020",ifelse(bdd$annee %in% c(2021,2022),"2021-2022","2023-2025")))
 
 # ajout du max et du rang standardisé
 bdd <- bdd %>%
@@ -37,7 +37,7 @@ bdd <- bdd %>%
 bdd_1A_2A <- bdd[bdd$annee_ecole %in% c("1A","2A"),]
 
 #  conserver une ligne par eleve et par année
-bdd_1A_2A_unique <- bdd_1A_2A[!duplicated(cbind(bdd_1A_2A$id_crypte,bdd_1A_2A$annee)),]
+bdd_1A_2A_unique <- bdd_1A_2A[!duplicated(cbind(bdd_1A_2A$id_etudiant,bdd_1A_2A$annee)),]
 
 bdd_bloc_1A_2A <- bdd_1A_2A_unique %>%
   filter(annee_ecole %in% c("1A","2A")) %>%
@@ -73,7 +73,7 @@ bdd_bloc_1A_2A <- bdd_1A_2A_unique %>%
 bdd_3A <- bdd[bdd$annee_ecole=="3A" & !is.na(bdd$filiere_3A) & bdd$att_ing=="ingénieur",]
 
 #  conserver une ligne par eleve et par année
-bdd_3A <- bdd_3A[!duplicated(cbind(bdd_3A$id_crypte,bdd_3A$annee)),]
+bdd_3A <- bdd_3A[!duplicated(cbind(bdd_3A$id_etudiant,bdd_3A$annee)),]
 
 # recoder filiere 3A pour pb sur autres et pb sur nom filiere (regroupement)
 bdd_3A$fil_3A <- ifelse(bdd_3A$filiere_3A == "Autres" & bdd_3A$voie_lib %in% c("3A,3A GDRIF","3A,3A GDRIF,OFPR","3A,3A GR", "3A,3A GR,3A Ing,OFPR,T00000","3A,3A GR,3A Ing,T00000","3A,3A GR,3A Ing,T01850","3A,3A GR,3A Ing,T02650","3A,3A GR,CVEC","3A,3A GR,CVEC,OFPR","3A,3A GR,CVEC,OFPR,Tpoursuite","3A,3A GR,CVEC,Tpoursuite","3A,3A GR,OFPR"),"GDR",ifelse(bdd_3A$filiere_3A == "Autres" & bdd_3A$voie_lib %in% c("3A,3A Ing,3A SBio,OFPR,T00000","3A,3A Ing,3A SBio,OFPR,T01850","3A,3A Ing,3A SBio,T00000","3A,3A Ing,3A SBio,T01850","3A,3A SBio","3A,3A SBio,CVEC","3A,3A SBio,CVEC,OFPR","3A,3A SBio,CVEC,OFPR,Tpoursuite","3A,3A SBio,CVEC,Tpoursuite","3A,3A SBio,OFPR","3A,3A SBio,OFPR,Tpoursuite","3A,3A SBio,T00000"),"SBio",ifelse(bdd_3A$filiere_3A == "M","MKT",ifelse(bdd_3A$filiere_3A == "SV","SBio",ifelse(bdd_3A$filiere_3A == "ISTS","MES",bdd_3A$filiere_3A)))))
@@ -86,7 +86,7 @@ bdd_3A$fil_3A <- ifelse(bdd_3A$filiere_3A == "Autres" & bdd_3A$voie_lib %in% c("
 ```{r}
 
 nb_eleve_par_annee <- bdd %>% 
-  distinct(id_crypte, annee, annee_ecole) %>%
+  distinct(id_etudiant, annee, annee_ecole) %>%
   count(annee, annee_ecole) %>%                   
   pivot_wider(
     names_from  = annee_ecole,                    
@@ -132,7 +132,7 @@ nb_eleve_par_annee %>%
 
 # Calcul des % H/F
 pct_eleve_par_annee <- bdd %>% 
-  distinct(id_crypte, annee, annee_ecole, sexe) %>%
+  distinct(id_etudiant, annee, annee_ecole, sexe) %>%
   count(annee, annee_ecole, sexe) %>%
   group_by(annee, annee_ecole) %>%
   mutate(
@@ -162,7 +162,7 @@ pct_eleve_par_annee %>%
 ```{r}
 
 nb_eleve_par_annee <- bdd %>% 
-  distinct(id_crypte, annee, annee_ecole, att_ing) %>%
+  distinct(id_etudiant, annee, annee_ecole, att_ing) %>%
   count(annee, annee_ecole, att_ing) %>%                   
   pivot_wider(
     names_from  = annee_ecole,                    
@@ -183,7 +183,7 @@ nb_eleve_par_annee %>%
 ```{r}
 
 nb_eleve_par_annee <- bdd %>% 
-  distinct(id_crypte, annee, annee_ecole, redoublement) %>%
+  distinct(id_etudiant, annee, annee_ecole, redoublement) %>%
   count(annee, annee_ecole, redoublement) %>%                   
   pivot_wider(
     names_from  = annee_ecole,                    
@@ -205,7 +205,7 @@ nb_eleve_par_annee %>%
 ```{r}
 
 nb_eleve_par_annee <- bdd %>% 
-  distinct(id_crypte, annee, annee_ecole, exclusion) %>%
+  distinct(id_etudiant, annee, annee_ecole, exclusion) %>%
   count(annee, annee_ecole, exclusion) %>%                   
   pivot_wider(
     names_from  = annee_ecole,                    
@@ -228,7 +228,7 @@ nb_eleve_par_annee %>%
 ```{r}
 
 nb_eleves_3A_ing <- bdd_3A %>% 
-  distinct(id_crypte, annee, fil_3A) %>%
+  distinct(id_etudiant, annee, fil_3A) %>%
   count(annee, fil_3A) %>%                   
   pivot_wider(
     names_from  = fil_3A,                    
@@ -248,7 +248,7 @@ nb_eleves_3A_ing %>%
 
 # Données en format long avec % par année
 nb_eleves_3A_long <- bdd_3A %>% 
-  distinct(id_crypte, annee, fil_3A) %>%
+  distinct(id_etudiant, annee, fil_3A) %>%
   count(annee, fil_3A) %>%
   group_by(annee) %>%
   mutate(
@@ -1367,7 +1367,7 @@ Afin de comparer les rangs année par année et par filière, un rang standardis
 
 bdd_1A <- bdd[bdd$annee_ecole %in% c("1A"),]
 
-bdd_1A_unique <- bdd_1A[!duplicated(cbind(bdd_1A$id_crypte,bdd_1A$annee)),]
+bdd_1A_unique <- bdd_1A[!duplicated(cbind(bdd_1A$id_etudiant,bdd_1A$annee)),]
 
 bdd_plot <- bdd_1A_unique %>% 
   filter(!is.na(ccc_ran_com)) %>% 

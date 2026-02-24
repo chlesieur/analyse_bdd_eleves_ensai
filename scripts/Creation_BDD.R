@@ -1,3 +1,23 @@
+pkgs <- c("arrow", "DT","here","readxl","writexl","labelled","labelled","sjlabelled","stringi","readr","readxl","janitor")
+
+for (pkg in pkgs) {
+  if (!requireNamespace(pkg, quietly = TRUE)) {
+    message("Installation du package manquant : ", pkg)
+    tryCatch(
+      {
+        install.packages(pkg, repos = "https://cloud.r-project.org")
+        library(pkg, character.only = TRUE)
+      },
+      error = function(e) {
+        stop("Impossible d’installer le package : ", pkg, "\n", e$message, call. = FALSE)
+      }
+    )
+  } else {
+    library(pkg, character.only = TRUE)
+  }
+}
+
+
 library(purrr)
 library(dplyr)
 library(stringr)
@@ -77,12 +97,12 @@ bdd_points_2 <- bdd_points_1 %>%
 
 ######### Lecture des fichiers de la requete points bonus et jury'admission ##########
 
-integrants_maths_att <- "data/admissions/integrants_maths_attachés_2015_2024.xlsx"
-integrants_maths_ing <- "data/admissions/integrants_maths_ingénieurs_2015_2024.xlsx"
+integrants_maths_att <- "data/admissions/integrants_maths_attachés_2015_2025.xlsx"
+integrants_maths_ing <- "data/admissions/integrants_maths_ingénieurs_2015_2025.xlsx"
 
 onglets_att <- excel_sheets(integrants_maths_att)
 
-integrants_maths_att_2015_2024 <- map_dfr(
+integrants_maths_att_2015_2025 <- map_dfr(
   onglets_att,
   ~ read_excel(integrants_maths_att, sheet = .x) %>%
     clean_names() %>%   # met les noms en snake_case
@@ -91,14 +111,14 @@ integrants_maths_att_2015_2024 <- map_dfr(
 
 onglets_ing <- excel_sheets(integrants_maths_ing)
 
-integrants_maths_ing_2015_2024 <- map_dfr(
+integrants_maths_ing_2015_2025 <- map_dfr(
   onglets_ing,
   ~ read_excel(integrants_maths_ing, sheet = .x) %>%
     clean_names() %>%   # met les noms en snake_case
     select(nom, prenom, ccc_ran_com)
 )
 
-integrants_maths_2015_2024 <- rbind(integrants_maths_att_2015_2024,integrants_maths_ing_2015_2024)
+integrants_maths_2015_2025 <- rbind(integrants_maths_att_2015_2025,integrants_maths_ing_2015_2025)
 
 ################# fusion des bases ########################"""
 
@@ -147,15 +167,15 @@ clean_text <- function(x, first_only = TRUE) {
 
 bdd <- bdd %>% mutate(id = paste0(clean_text(nom, TRUE), clean_text(prenom, TRUE)))
 
-integrants_maths_2015_2024 <- integrants_maths_2015_2024 %>%
+integrants_maths_2015_2025 <- integrants_maths_2015_2025 %>%
   mutate(id = paste0(clean_text(nom, TRUE), clean_text(prenom, TRUE)))
 
 bdd_x <- bdd %>%
-  left_join(integrants_maths_2015_2024, by = "id")
+  left_join(integrants_maths_2015_2025, by = "id")
 
 
 # Etudes des quelques cas non appariés
-non_appariees <- integrants_maths_2015_2024 %>%
+non_appariees <- integrants_maths_2015_2025 %>%
   anti_join(bdd, by = "id") %>% 
   filter(!is.na(nom))
 
@@ -166,7 +186,7 @@ bdd_x_unique <- bdd_x %>%
 nb_match <- sum(!is.na(bdd_x_unique$nom.y))
 
 # Taux d’appariement (%)
-taux_appariement <- nb_match / nrow(integrants_maths_2015_2024) * 100
+taux_appariement <- nb_match / nrow(integrants_maths_2015_2025) * 100
 taux_appariement
 
 # Ajout des non appariés à la main
@@ -313,7 +333,7 @@ bdd_3 <- left_join(bdd_2,filieres_stephane_3A,
 
 ## patch pour rang et rang max
 
-# bdd_rang <- read_parquet("Z:/0_Direction_des_Etudes/Base_eleve/data/20250618/bdd_2015_2024.parquet")
+# bdd_rang <- read_parquet("Z:/0_Direction_des_Etudes/Base_eleve/data/20250618/bdd_2015_2025.parquet")
 # 
 # bdd_rang_1 <- bdd_rang %>% 
 #   select(annee,id_etudiant,code_matiere,rang_matiere, rang_max_matiere, point_jury)
@@ -444,8 +464,6 @@ bdd_7 <- left_join(bdd_4, base_final, by = "id_etudiant")
 # # Chiffrement
 # bdd_7$id_crypte <- encrypt_id(bdd_7$id_etudiant, cle_secrete)
 # 
-bdd_7 <- bdd_7 %>% 
-  select(-id_etudiant)
 
 # Déchiffrement
 #bdd_7$id_decrypte <- decrypt_id(bdd_7$id_crypte, cle_secrete)
@@ -513,16 +531,16 @@ bdd_7$bloc_an<- ifelse(bdd_7$annee %in% c(2015,2016,2017),
                                              "2023-2024")))
 
 # Export en csv
-write.csv2(bdd_7, "data/bdd_2015_2024.csv", row.names = FALSE)
+write.csv2(bdd_7, "data/bdd_2015_2025.csv", row.names = FALSE)
 
 # Export en xlsx
-write_xlsx(bdd_7, path = "data/bdd_2015_2024.xlsx")
+write_xlsx(bdd_7, path = "data/bdd_2015_2025.xlsx")
 
 # Export en parquet
-write_parquet(bdd_7,"data/bdd_2015_2024.parquet")
+write_parquet(bdd_7,"data/bdd_2015_2025.parquet")
 
 # Export en RDS
-write_rds(bdd_7, "data/bdd_2015_2024.rds")
+write_rds(bdd_7, "data/bdd_2015_2025.rds")
 
 # Dictionnaire des variables
 
@@ -623,3 +641,4 @@ dict <- dictionnaire_labels(bdd_7)
 write_xlsx(dict, path = "data/dictionnaire.xlsx")
 
 write_parquet(dict, "data/dictionnaire.parquet")
+
