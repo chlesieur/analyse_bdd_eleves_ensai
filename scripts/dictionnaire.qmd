@@ -16,7 +16,7 @@ execute:
 :::
 
 ```{r setup, include=FALSE}
-pkgs <- c("arrow", "DT","here")
+pkgs <- c("arrow", "DT","here","readxl")
 
 for (pkg in pkgs) {
   if (!requireNamespace(pkg, quietly = TRUE)) {
@@ -39,15 +39,8 @@ for (pkg in pkgs) {
 
 
 ```{r}
-<<<<<<< HEAD
-dict <- read_parquet(
-  "C:/Users/clesieur/Documents/Base_eleve/analyse_bdd_eleves_ensai/data/dictionnaire.parquet",
-  mmap = FALSE
-)
-=======
-# Résolution de chemin robuste (évite les faux positifs en CI)
+
 dict <- arrow::read_parquet(here("dictionnaire","dictionnaire.parquet"))
->>>>>>> 4f7ea41dcabf4775041ee2397aa63f757aa0e631
 
 # Renommage seulement si ≥ 3 colonnes
 if (ncol(dict) >= 3) {

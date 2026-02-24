@@ -75,7 +75,7 @@ bdd_points_1 <- bdd_points %>%
 bdd_points_2 <- bdd_points_1 %>%
   distinct(X.annee_courante, X.id_etudiant, X.code_matiere, .keep_all = TRUE)
 
-######### Lecture d'es fichiers de la requete points bonus et jury'admission ##########
+######### Lecture des fichiers de la requete points bonus et jury'admission ##########
 
 integrants_maths_att <- "data/admissions/integrants_maths_attachés_2015_2024.xlsx"
 integrants_maths_ing <- "data/admissions/integrants_maths_ingénieurs_2015_2024.xlsx"
