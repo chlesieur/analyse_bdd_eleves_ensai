@@ -13,10 +13,11 @@ library(janitor)
 ######### Lecture des fichiers de la requete principale ##########
 
 # Répertoire où déposer les exports pamplemousse tels quels
-repertoire <- "Z:/0_Direction_des_Etudes/Base_eleve/data"
+repertoire <- "C:/Users/clesieur/Documents/Base_eleve/analyse_bdd_eleves_ensai/data"
+# C:\Users\clesieur\Documents\Base_eleve\analyse_bdd_eleves_ensai
 
 # Lecture automatique des exports pamplemousse
-fichiers_csv <- list.files(path = paste0(repertoire,"/export pamplemousse/requete principale"), pattern = "*.csv")
+fichiers_csv <- list.files(path = paste0(repertoire,"/export pamplemousse/requete principale/"), pattern = "\\.csv$")
 
 # tri les fichiers 
 fichiers_csv_tries <- sort(fichiers_csv)
@@ -68,7 +69,7 @@ for (fichier in fichiers_csv_tries) {
 }
 
 bdd_points_1 <- bdd_points %>% 
-  select(-c("X.ue","X.matiere","X","X.id_type_matiere"))
+  select(-c("X.ue","X.matiere","X","X.id_type_matiere","X.moyenne_matiere"))
 
 # Elimination des doublons
 bdd_points_2 <- bdd_points_1 %>%
@@ -279,8 +280,7 @@ filieres_stephane_3A <- filieres_stephane_3A %>%
 
 bdd_3 <- left_join(bdd_2,filieres_stephane_3A, 
                    by = c("annee", "matiere"),
-                   keep = FALSE) %>% 
-  select(-point_jury)
+                   keep = FALSE)
 
 # Seules les variables de note, bonus, coeff et rang sont numérisées
 
@@ -313,22 +313,18 @@ bdd_3 <- left_join(bdd_2,filieres_stephane_3A,
 
 ## patch pour rang et rang max
 
-bdd_rang <- read_parquet("Z:/0_Direction_des_Etudes/Base_eleve/data/20250618/bdd_2015_2024.parquet")
+# bdd_rang <- read_parquet("Z:/0_Direction_des_Etudes/Base_eleve/data/20250618/bdd_2015_2024.parquet")
+# 
+# bdd_rang_1 <- bdd_rang %>% 
+#   select(annee,id_etudiant,code_matiere,rang_matiere, rang_max_matiere, point_jury)
 
-bdd_rang_1 <- bdd_rang %>% 
-  select(annee,id_etudiant,code_matiere,rang_matiere, rang_max_matiere, point_jury)
 
-bdd_4 <- left_join(bdd_3, bdd_rang_1, by = c("annee","id_etudiant","code_matiere"))
-
-bdd_4$point_jury <- ifelse(grepl("points de jury", bdd_4$matiere, ignore.case = TRUE),
-                           bdd_4$point_jury, 
+bdd_3$point_jury <- ifelse(grepl("points de jury", bdd_3$matiere, ignore.case = TRUE),
+                           bdd_3$point_jury, 
                            NA)
 
-table(bdd_4$point_jury)
-table(bdd_4$point_bonus)
-
 ## Numérisation de certaines variables
-bdd_4$moyenne_matiere <- gsub("\\.", ",", bdd_4$moyenne_matiere)
+bdd_3$moyenne_matiere <- gsub("\\.", ",", bdd_3$moyenne_matiere)
 
 numeriser <- function(data, vars, decimal_mark = ",") {
   data %>% mutate(across(
@@ -348,7 +344,7 @@ numeriser <- function(data, vars, decimal_mark = ",") {
 
 
 bdd_4 <- numeriser(
-  bdd_4,
+  bdd_3,
   c("rang_matiere",
   "rang_max_matiere",
   "moyenne_matiere",
@@ -417,37 +413,37 @@ table(base_final$exclusion)
 
 bdd_7 <- left_join(bdd_4, base_final, by = "id_etudiant")
 
-## Anonymisation
+# ## Anonymisation
+# 
+# # Clé secrète pour chiffrer/déchiffrer
+# cle_secrete <- "Theophilus81!" # (me demander mon mot de passe - CL)
+# 
+# # Fonction de chiffrement (XOR + Base64)
+# encrypt_id <- function(id_vector, cle) {
+#   sapply(id_vector, function(id) {
+#     id_raw <- as.integer(charToRaw(as.character(id)))
+#     cle_raw <- as.integer(charToRaw(cle))
+#     cle_longue <- rep(cle_raw, length.out = length(id_raw))
+#     xor_result <- bitwXor(id_raw, cle_longue)
+#     base64enc::base64encode(as.raw(xor_result))
+#   })
+# }
+# 
+# # Fonction de déchiffrement (Base64 + XOR)
+# decrypt_id <- function(enc_vector, cle) {
+#   sapply(enc_vector, function(enc) {
+#     chiffré <- as.integer(base64enc::base64decode(enc))
+#     cle_raw <- as.integer(charToRaw(cle))
+#     cle_longue <- rep(cle_raw, length.out = length(chiffré))
+#     xor_result <- bitwXor(chiffré, cle_longue)
+#     rawToChar(as.raw(xor_result))
+#   })
+# }
 
-# Clé secrète pour chiffrer/déchiffrer
-cle_secrete <- "Theophilus81!" # (me demander mon mot de passe - CL)
 
-# Fonction de chiffrement (XOR + Base64)
-encrypt_id <- function(id_vector, cle) {
-  sapply(id_vector, function(id) {
-    id_raw <- as.integer(charToRaw(as.character(id)))
-    cle_raw <- as.integer(charToRaw(cle))
-    cle_longue <- rep(cle_raw, length.out = length(id_raw))
-    xor_result <- bitwXor(id_raw, cle_longue)
-    base64enc::base64encode(as.raw(xor_result))
-  })
-}
-
-# Fonction de déchiffrement (Base64 + XOR)
-decrypt_id <- function(enc_vector, cle) {
-  sapply(enc_vector, function(enc) {
-    chiffré <- as.integer(base64enc::base64decode(enc))
-    cle_raw <- as.integer(charToRaw(cle))
-    cle_longue <- rep(cle_raw, length.out = length(chiffré))
-    xor_result <- bitwXor(chiffré, cle_longue)
-    rawToChar(as.raw(xor_result))
-  })
-}
-
-
-# Chiffrement
-bdd_7$id_crypte <- encrypt_id(bdd_7$id_etudiant, cle_secrete)
-
+# # Chiffrement
+# bdd_7$id_crypte <- encrypt_id(bdd_7$id_etudiant, cle_secrete)
+# 
 bdd_7 <- bdd_7 %>% 
   select(-id_etudiant)
 
@@ -455,8 +451,8 @@ bdd_7 <- bdd_7 %>%
 #bdd_7$id_decrypte <- decrypt_id(bdd_7$id_crypte, cle_secrete)
 
 #  Vérification
-print(bdd_7)
-print(all(bdd_7$id_etudiant == bdd_7$id_decrypte))  # Doit afficher TRUE
+# print(bdd_7)
+# print(all(bdd_7$id_etudiant == bdd_7$id_decrypte))  # Doit afficher TRUE
 
 # Ajout de variables
 
@@ -532,7 +528,7 @@ write_rds(bdd_7, "data/bdd_2015_2024.rds")
 
 # Labels pour création d'un dictionnaire
 bdd_7$annee_scolaire <- structure(bdd_7$annee_scolaire, label = "Année de scolarité")
-bdd_7$id_crypte <- structure(bdd_7$id_crypte , label = "Identifiant crypté de l'étudiant")
+#bdd_7$id_crypte <- structure(bdd_7$id_crypte , label = "Identifiant crypté de l'étudiant")
 bdd_7$sexe <- structure(bdd_7$sexe, label = "Sexe de l'étudiant")
 bdd_7$nationalite <- structure(bdd_7$nationalite, label = "Nationalité de l'étudiant")
 bdd_7$id_nationalite <- structure(bdd_7$id_nationalite, label = "Identifiant de la nationalité de l'étudiant")
@@ -597,12 +593,12 @@ bdd_7$MGS2 <- structure(bdd_7$MGS2, label = "Moyenne Générale S2")
 bdd_7$AV <- structure(bdd_7$MGS2, label = "Année validée")
 bdd_7$point_bonus <- structure(bdd_7$point_bonus, label = "Point de bonus")
 bdd_7$point_jury <- structure(bdd_7$point_jury, label = "Point de jury")
-bdd_7$objectifs_matiere <- structure(bdd_7$objectifs_matiere, label = "Commentaire matière dont explication point de bonus")
+#bdd_7$objectifs_matiere <- structure(bdd_7$objectifs_matiere, label = "Commentaire matière dont explication point de bonus")
 bdd_7$commentaire <- structure(bdd_7$commentaire, label = "Commentaire sur la décision de validation de l'année")
 bdd_7$bonus_type <- structure(bdd_7$bonus_type, label = "type de bonus (à déterminer)")
 bdd_7$id_commentaire_bulletin_ref <- structure(bdd_7$id_commentaire_bulletin_ref, label = "Décision de validation (cf table table_bulletin_ref_id_bonus)")
 bdd_7$verrou <- structure(bdd_7$verrou, label = "Variable récupérée dans commentaire (à déterminer)")
-bdd_7$id_crypte <- structure(bdd_7$id_crypte, label = "Identifiant crypté de l'étudiant")
+#bdd_7$id_crypte <- structure(bdd_7$id_crypte, label = "Identifiant crypté de l'étudiant")
 bdd_7$ccc_ran_com <- structure(bdd_7$ccc_ran_com, label = "Classement au concours commun mathématiques")
 bdd_7$spe_entree <- structure(bdd_7$spe_entree, label = "Spécialité à l'entrée")
 bdd_7$prepa_etoile <- structure(bdd_7$prepa_etoile, label = "Provenance d'une prépa étoile")

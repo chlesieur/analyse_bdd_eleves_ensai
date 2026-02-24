@@ -32,8 +32,8 @@ if (!requireNamespace("arrow", quietly = TRUE)) {
 
 
 ```{r}
-dict <- safe_read_parquet(
-  "Z:/0_Direction_des_Etudes/Base_eleve/data/dictionnaire.parquet",
+dict <- read_parquet(
+  "C:/Users/clesieur/Documents/Base_eleve/analyse_bdd_eleves_ensai/data/dictionnaire.parquet",
   mmap = FALSE
 )
 
