@@ -1,6 +1,9 @@
 project:
   type: website
 
+preview:
+  browser: true   # ouvre automatiquement
+  watch: false    # optionnel, évite le live-reload si tu veux juste voir le rendu
 
 execute:
   echo: false
@@ -23,8 +26,10 @@ website:
         menu:
           - text: "Requêtes SQL"
             href: "scripts/requetes_SQL.qmd"
-          - text: "Script R"
+          - text: "Script R Création BDD"
             href: "scripts/creation_BDD.qmd"
+          - text: "Codes R Analyse BDD"
+            href: "scripts/code_R_analyse.qmd"
           - text: "Dictionnaire des variables"
             href: "scripts/dictionnaire.qmd"
     right:
@@ -45,8 +50,10 @@ website:
         contents:
           - text: "Requêtes SQL"
             file: "scripts/requetes_SQL.qmd"
-          - text: "Script R"
+          - text: "Script R Création BDD"
             file: "scripts/creation_BDD.qmd"
+          - text: "Codes R Analyse BDD"
+            file: "scripts/code_R_analyse.qmd"
           - text: "Dictionnaire des variables"
             file: "scripts/dictionnaire.qmd"
 

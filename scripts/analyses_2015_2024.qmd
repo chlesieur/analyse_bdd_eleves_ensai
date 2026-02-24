@@ -3,19 +3,25 @@ title: "Analyses sur la période 2015-2024"
 format: html
 ---
 
-```{r}
-library(dplyr)
-library(ggplot2)
-library(readr)
-library(tidyr)
-library(forcats)
-library(arrow)
-library(scales)
-library(knitr)
-library(kableExtra)
-library(readxl)
+```{r setup, include=FALSE}
+# Liste des packages requis
+pkgs <- c(
+  "arrow","dplyr","here","DT","readr","readxl",
+  "knitr","kableExtra","scales","forcats","tidyr","ggplot2"
+)
 
-bdd <- read_parquet("Z:/0_Direction_des_Etudes/Base_eleve/data/bdd_2015_2024.parquet") %>% filter(annee_ecole != "Autres")
+missing <- pkgs[!vapply(pkgs, requireNamespace, logical(1), quietly = TRUE)]
+if (length(missing)) {
+  stop("Packages manquants dans l'env renv: ", paste(missing, collapse = ", "),
+       call. = FALSE)
+}
+
+invisible(lapply(pkgs, library, character.only = TRUE))
+
+```
+
+```{r}
+bdd <- read_parquet(here("data","bdd_2015_2024.parquet")) %>% filter(annee_ecole != "Autres")
 
 # creation boucles sortie stat par bloc annee
 bdd$bloc_an<- ifelse(bdd$annee %in% c(2015,2016,2017),"2015-2017",ifelse (bdd$annee %in% c(2018,2019,2020),"2018-2020",ifelse(bdd$annee %in% c(2021,2022),"2021-2022","2023-2024")))
@@ -71,7 +77,6 @@ bdd_3A <- bdd_3A[!duplicated(cbind(bdd_3A$id_crypte,bdd_3A$annee)),]
 
 # recoder filiere 3A pour pb sur autres et pb sur nom filiere (regroupement)
 bdd_3A$fil_3A <- ifelse(bdd_3A$filiere_3A == "Autres" & bdd_3A$voie_lib %in% c("3A,3A GDRIF","3A,3A GDRIF,OFPR","3A,3A GR", "3A,3A GR,3A Ing,OFPR,T00000","3A,3A GR,3A Ing,T00000","3A,3A GR,3A Ing,T01850","3A,3A GR,3A Ing,T02650","3A,3A GR,CVEC","3A,3A GR,CVEC,OFPR","3A,3A GR,CVEC,OFPR,Tpoursuite","3A,3A GR,CVEC,Tpoursuite","3A,3A GR,OFPR"),"GDR",ifelse(bdd_3A$filiere_3A == "Autres" & bdd_3A$voie_lib %in% c("3A,3A Ing,3A SBio,OFPR,T00000","3A,3A Ing,3A SBio,OFPR,T01850","3A,3A Ing,3A SBio,T00000","3A,3A Ing,3A SBio,T01850","3A,3A SBio","3A,3A SBio,CVEC","3A,3A SBio,CVEC,OFPR","3A,3A SBio,CVEC,OFPR,Tpoursuite","3A,3A SBio,CVEC,Tpoursuite","3A,3A SBio,OFPR","3A,3A SBio,OFPR,Tpoursuite","3A,3A SBio,T00000"),"SBio",ifelse(bdd_3A$filiere_3A == "M","MKT",ifelse(bdd_3A$filiere_3A == "SV","SBio",ifelse(bdd_3A$filiere_3A == "ISTS","MES",bdd_3A$filiere_3A)))))
-
 ```
 
 ## 1. Données de cadrage

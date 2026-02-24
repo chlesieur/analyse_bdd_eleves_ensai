@@ -26,8 +26,13 @@ knitr::opts_chunk$set(eval = FALSE, echo = TRUE)
 ℹ️ Cette page documente le **script creation_BDD.R** à faire tourner après avoir exécuté les requêtes SQL dans Pamplemousse. Ce script crée les bases de données et les exporte en quatre format (parquet, xlsx, csv, rds). Il permet également de créer le *dictionnaire des variables*.
 :::
 
+<<<<<<< HEAD
 [Requêtes SQL](/scripts/requetes_SQL.qmd){.button .blue-button}
 [Voir le dictionnaire des variables](/scripts/dictionnaire.qmd){.button .green-button}
+=======
+requetes_SQL.qmd{.button .blue-button}
+dictionnaire.qmd{.button .green-button}
+>>>>>>> 4f7ea41dcabf4775041ee2397aa63f757aa0e631
 
 # Présentation du script
 
@@ -57,11 +62,16 @@ library(stringi)
 library(readr)
 library(readxl)
 library(janitor)
+library(here)
 
 ######### Lecture des fichiers de la requete principale ##########
 
 # Répertoire où déposer les exports pamplemousse tels quels
+<<<<<<< HEAD
 repertoire <- "C:/Users/clesieur/Documents/Base_eleve/analyse_bdd_eleves_ensai/data"
+=======
+repertoire <- here("data")
+>>>>>>> 4f7ea41dcabf4775041ee2397aa63f757aa0e631
 
 # Lecture automatique des exports pamplemousse
 fichiers_csv <- list.files(path = paste0(repertoire,"/export pamplemousse/requete principale"), pattern = "*.csv")

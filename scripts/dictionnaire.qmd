@@ -15,32 +15,45 @@ execute:
 ℹ️ Utilisez la recherche globale ou les filtres sous les en-têtes.
 :::
 
-```{r}
-# Chargement
-if (!requireNamespace("readxl", quietly = TRUE)) {
-  install.packages("readxl", repos = "https://cloud.r-project.org")
-}
-if (!requireNamespace("DT", quietly = TRUE)) {
-  install.packages("DT", repos = "https://cloud.r-project.org")
-}
+```{r setup, include=FALSE}
+pkgs <- c("arrow", "DT","here")
 
-if (!requireNamespace("arrow", quietly = TRUE)) {
-  install.packages("arrow", repos = "https://cloud.r-project.org")
+for (pkg in pkgs) {
+  if (!requireNamespace(pkg, quietly = TRUE)) {
+    message("Installation du package manquant : ", pkg)
+    tryCatch(
+      {
+        install.packages(pkg, repos = "https://cloud.r-project.org")
+        library(pkg, character.only = TRUE)
+      },
+      error = function(e) {
+        stop("Impossible d’installer le package : ", pkg, "\n", e$message, call. = FALSE)
+      }
+    )
+  } else {
+    library(pkg, character.only = TRUE)
+  }
 }
 
 ```
 
 
 ```{r}
+<<<<<<< HEAD
 dict <- read_parquet(
   "C:/Users/clesieur/Documents/Base_eleve/analyse_bdd_eleves_ensai/data/dictionnaire.parquet",
   mmap = FALSE
 )
+=======
+# Résolution de chemin robuste (évite les faux positifs en CI)
+dict <- arrow::read_parquet(here("dictionnaire","dictionnaire.parquet"))
+>>>>>>> 4f7ea41dcabf4775041ee2397aa63f757aa0e631
 
-# En-têtes lisibles
-names(dict) <- c("Variable", "Label", "Format")
+# Renommage seulement si ≥ 3 colonnes
+if (ncol(dict) >= 3) {
+  names(dict)[1:3] <- c("Variable", "Label", "Format")
+}
 
-# Table interactive
 DT::datatable(
   dict,
   rownames   = FALSE,
