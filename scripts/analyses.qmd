@@ -4,27 +4,20 @@ format: html
 ---
 
 ```{r setup, include=FALSE}
-# Liste des packages requis
-pkgs <- c(
-  "arrow", "dplyr", "here", "DT", "readr", "readxl",
-  "knitr", "kableExtra", "scales", "forcats", "tidyr", "ggplot2"
-)
-
-# Récupère le chemin de la bibliothèque renv
-renv_lib <- renv::paths$library()
-
-# Vérifie les packages dans renv uniquement
-missing <- pkgs[!vapply(pkgs, function(pkg) {
-  file.exists(file.path(renv_lib, pkg))
-}, logical(1))]
-
-if (length(missing)) {
-  stop("Packages manquants dans renv: ", paste(missing, collapse = ", "), call. = FALSE)
+# Vérifie que renv est synchronisé
+if (length(renv::status()$package) > 0) {
+  stop("Projet renv non synchronisé. Exécutez renv::status() pour plus de détails.")
 }
 
-# Charge les packages depuis renv
+# Charge les packages (sans vérification redondante)
+pkgs <- c(
+  "arrow", "dplyr", "here", "DT", "scales",  # scales avant readr
+  "readr", "readxl", "knitr", "kableExtra",
+  "forcats", "tidyr", "ggplot2"
+)
+
 invisible(lapply(pkgs, function(pkg) {
-  library(pkg, lib.loc = renv_lib, character.only = TRUE)
+  suppressPackageStartupMessages(library(pkg, character.only = TRUE))
 }))
 
 
