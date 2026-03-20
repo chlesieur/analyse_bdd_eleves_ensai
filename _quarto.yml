@@ -21,7 +21,7 @@ website:
       - text: "Présentation du projet"
         href: index.qmd
       - text: "Premières analyses"
-        href: "scripts/analyses_2015_2024.qmd"
+        href: "scripts/analyses.qmd"
       - text: "Documentation"
         menu:
           - text: "Requêtes SQL"

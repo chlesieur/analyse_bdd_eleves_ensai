@@ -526,9 +526,9 @@ bdd_7$bloc_an<- ifelse(bdd_7$annee %in% c(2015,2016,2017),
                               "2015-2017",
                               ifelse (bdd_7$annee %in% c(2018,2019,2020),
                                       "2018-2020",
-                                      ifelse(bdd_7$annee %in% c(2021,2022),
-                                             "2021-2022",
-                                             "2023-2024")))
+                                      ifelse(bdd_7$annee %in% c(2021,2022,2023),
+                                             "2021-2023",
+                                             "2024-2025")))
 
 # Export en csv
 write.csv2(bdd_7, "data/bdd_2015_2025.csv", row.names = FALSE)
