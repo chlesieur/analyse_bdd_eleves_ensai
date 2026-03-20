@@ -36,19 +36,21 @@ jobs:
         with:
           r-version: "release"
 
-      # Dépendances système utiles (si tu utilises {sf}, {arrow}, etc. — sans {terra})
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update -y
-          sudo apt-get install -y \
-            make \
-            cmake \
-            gdal-bin \
-            libgdal-dev \
-            libproj-dev \
-            libudunits2-dev \
-            libgeos-dev \
-            libpng-dev
+# Dépendances système utiles
+- name: Install system dependencies
+  run: |
+    sudo apt-get update -y
+    sudo apt-get install -y \
+      make \
+      cmake \
+      gdal-bin \
+      libgdal-dev \
+      libproj-dev \
+      libudunits2-dev \
+      libgeos-dev \
+      libpng-dev \
+      libfontconfig1-dev \
+      libfreetype6-dev
 
       # Utiliser Posit Package Manager (binaires CRAN quand dispo)
       - name: Set CRAN repo
