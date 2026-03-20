@@ -43,6 +43,12 @@ invisible(lapply(pkgs, library, character.only = TRUE))
 renv::install(missing)   # si le message te dit lesquels manquent
 renv::snapshot()
 
+getOption("repos")
+
+options(repos = c(CRAN = "https://cloud.r-project.org"))
+
+renv::install("arrow")
+
 renv::install("arrow")
 renv::install("DT")
 renv::install("leaflet")
