@@ -1,7 +1,7 @@
 ---
 title: "Construction et analyse de la base élèves"
 description: "Premières analyses sur les promotions 2015 à 2025"
-authors: "Christophe Lesieur, Laurent Costa, Stéphane Legleye"
+authors: "Christophe Lesieur, Stéphane Legleye, Laurent Costa"
 format: html
 from: markdown+emoji
 ---
