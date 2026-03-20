@@ -4,23 +4,20 @@ format: html
 ---
 
 ```{r setup, include=FALSE}
-# Vérifie que renv est synchronisé
-if (length(renv::status()$package) > 0) {
-  stop("Projet renv non synchronisé. Exécutez renv::status() pour plus de détails.")
-}
-
-# Charge les packages (sans vérification redondante)
-pkgs <- c(
-  "arrow", "dplyr", "here", "DT", "scales",  # scales avant readr
-  "readr", "readxl", "knitr", "kableExtra",
-  "forcats", "tidyr", "ggplot2"
-)
-
-invisible(lapply(pkgs, function(pkg) {
-  suppressPackageStartupMessages(library(pkg, character.only = TRUE))
-}))
-
-
+library(dplyr)
+library(ggplot2)
+library(leaflet)
+library(rmarkdown)
+library(tidyr)
+library(readr)
+library(readxl)
+library(forcats)
+library(scales)
+library(arrow)
+library(here)
+library(DT)
+library(kableExtra)
+library(pROC)
 ```
 
 ```{r}

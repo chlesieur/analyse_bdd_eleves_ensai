@@ -11,5 +11,15 @@ Imports:
     dplyr,
     ggplot2,
     leaflet,
-    rmarkdown
+    rmarkdown,
+    tidyr,
+    readr,
+    readxl,
+    forcats,
+    scales,
+    arrow,
+    here,
+    DT,
+    pROC,
+    kableExtra
 Encoding: UTF-8
