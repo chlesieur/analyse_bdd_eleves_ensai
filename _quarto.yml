@@ -45,7 +45,7 @@ website:
       - text: "Présentation du projet"
         file: index.qmd
       - text: "Premières analyses"
-        file: "scripts/analyses_2015_2024.qmd"
+        file: "scripts/analyses.qmd"
       - section: "Documentation"
         contents:
           - text: "Requêtes SQL"

@@ -111,6 +111,7 @@ nb_eleve_par_annee %>%
                          nb_2A = "2A",
                          nb_3A = "3A")) |>
   ggplot(aes(x = factor(annee), y = effectif, fill = niveau)) +
+  scale_x_discrete(drop = FALSE) +  # Empêche la suppression des niveaux vides
   geom_col(position = position_dodge(width = 0.8)) +
   geom_text(aes(label = comma(effectif)), 
             position = position_dodge(width = 0.8),
