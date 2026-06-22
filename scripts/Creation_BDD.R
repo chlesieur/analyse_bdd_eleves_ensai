@@ -1,23 +1,3 @@
-pkgs <- c("arrow", "DT","here","readxl","writexl","labelled","labelled","sjlabelled","stringi","readr","readxl","janitor")
-
-for (pkg in pkgs) {
-  if (!requireNamespace(pkg, quietly = TRUE)) {
-    message("Installation du package manquant : ", pkg)
-    tryCatch(
-      {
-        install.packages(pkg, repos = "https://cloud.r-project.org")
-        library(pkg, character.only = TRUE)
-      },
-      error = function(e) {
-        stop("Impossible d’installer le package : ", pkg, "\n", e$message, call. = FALSE)
-      }
-    )
-  } else {
-    library(pkg, character.only = TRUE)
-  }
-}
-
-
 library(purrr)
 library(dplyr)
 library(stringr)
@@ -29,12 +9,16 @@ library(stringi)
 library(readr)
 library(readxl)
 library(janitor)
+library(writexl)
 
-######### Lecture des fichiers de la requete principale ##########
+### 1. Lecture des fichiers d'input
 
-# Répertoire où déposer les exports pamplemousse tels quels
+### 1.1. Lecture des fichiers de la requete principale 
+
+# Il s'agit d'utiliser les requêtes suivantes et les déposer dans des dossier "requete principale" et "requete points bonus et jury":
+# Scola - Extraction notes - Requête principale - Pour base élèves
+# Scola - Extraction notes - Rangs et points de bonus et de jury - Pour base élèves
 repertoire <- "C:/Users/clesieur/Documents/Base_eleve/analyse_bdd_eleves_ensai/data"
-# C:\Users\clesieur\Documents\Base_eleve\analyse_bdd_eleves_ensai
 
 # Lecture automatique des exports pamplemousse
 fichiers_csv <- list.files(path = paste0(repertoire,"/export pamplemousse/requete principale/"), pattern = "\\.csv$")
@@ -42,29 +26,22 @@ fichiers_csv <- list.files(path = paste0(repertoire,"/export pamplemousse/requet
 # tri les fichiers 
 fichiers_csv_tries <- sort(fichiers_csv)
 
-# Initialise un dataframe bdd
+# Concaténation verticale des fichiers de chaque année de la requête principale
 bdd <- data.frame()
-
 for (fichier in fichiers_csv_tries) {
-  
   data <- read.csv2(paste0(repertoire,"/export pamplemousse/requete principale/",fichier), encoding = "latin1")
-  
-  # Vérifie si les colonnes sont les mêmes que celles de la bdd
   if (ncol(bdd) > 0 && !identical(names(data), names(bdd))) {
     stop(paste("Les colonnes du fichier", fichier, "ne correspondent pas aux autres fichiers."))
   }
-  
-  # Ajoute les données du fichier courant à la bdd
   bdd <- rbind(bdd, data)
 }
 
 # Vérification de doublons
-bdd <- bdd %>%
+bdd_sans_doublon <- bdd %>%
   distinct(X.annee_courante, X.id_etudiant, X.code_matiere, .keep_all = TRUE) %>% 
-  filter(X.moyenne_generale != "=") %>% 
-  filter(!str_detect(X.voie_lib, regex("ERASMUS", ignore_case = TRUE)))
+  filter(X.moyenne_generale != "=")
 
-######### Lecture des fichiers de la requete points bonus et jury ##########
+### 1.2. Lecture des fichiers de la requete secondaire sur les points de bonus et de jury
 
 # Lecture automatique des exports pamplemousse
 fichiers_csv <- list.files(path = paste0(repertoire,"/export pamplemousse/requete points bonus et jury"), pattern = "*.csv")
@@ -72,19 +49,13 @@ fichiers_csv <- list.files(path = paste0(repertoire,"/export pamplemousse/requet
 # tri les fichiers 
 fichiers_csv_tries <- sort(fichiers_csv)
 
-# Initialise un dataframe bdd
+# Concaténation verticale des fichiers de chaque année de la requête principale
 bdd_points <- data.frame()
-
 for (fichier in fichiers_csv_tries) {
-  
   data <- read.csv2(paste0(repertoire,"/export pamplemousse/requete points bonus et jury/",fichier), encoding = "latin1")
-  
-  # Vérifie si les colonnes sont les mêmes que celles de la bdd
   if (ncol(bdd_points) > 0 && !identical(names(data), names(bdd_points))) {
     stop(paste("Les colonnes du fichier", fichier, "ne correspondent pas aux autres fichiers."))
   }
-  
-  # Ajoute les données du fichier courant à la bdd
   bdd_points <- rbind(bdd_points, data)
 }
 
@@ -95,24 +66,24 @@ bdd_points_1 <- bdd_points %>%
 bdd_points_2 <- bdd_points_1 %>%
   distinct(X.annee_courante, X.id_etudiant, X.code_matiere, .keep_all = TRUE)
 
-######### Lecture des fichiers de la requete points bonus et jury'admission ##########
+### 1.3.Lecture des fichiers d'admission au concours maths
 
 integrants_maths_att <- "data/admissions/integrants_maths_attachés_2015_2025.xlsx"
 integrants_maths_ing <- "data/admissions/integrants_maths_ingénieurs_2015_2025.xlsx"
 
-onglets_att <- excel_sheets(integrants_maths_att)
+onglets_math_att <- excel_sheets(integrants_maths_att)
 
 integrants_maths_att_2015_2025 <- map_dfr(
-  onglets_att,
+  onglets_math_att,
   ~ read_excel(integrants_maths_att, sheet = .x) %>%
     clean_names() %>%   # met les noms en snake_case
     select(nom, prenom, ccc_ran_com)
 )
 
-onglets_ing <- excel_sheets(integrants_maths_ing)
+onglets_math_ing <- excel_sheets(integrants_maths_ing)
 
 integrants_maths_ing_2015_2025 <- map_dfr(
-  onglets_ing,
+  onglets_math_ing,
   ~ read_excel(integrants_maths_ing, sheet = .x) %>%
     clean_names() %>%   # met les noms en snake_case
     select(nom, prenom, ccc_ran_com)
@@ -120,9 +91,23 @@ integrants_maths_ing_2015_2025 <- map_dfr(
 
 integrants_maths_2015_2025 <- rbind(integrants_maths_att_2015_2025,integrants_maths_ing_2015_2025)
 
-################# fusion des bases ########################"""
+### 1.4.Lecture des fichiers d'admission au concours BL
 
-bdd_2 <- left_join(bdd, bdd_points_2, 
+integrants_BL_att <- "data/admissions/integrants_BL_attachés_2015_2025.xlsx"
+#integrants_BL_ing <- "data/admissions/integrants_BL_ingenieurs_2015_2025.xlsx"
+
+onglets_BL_att <- excel_sheets(integrants_BL_att)
+
+integrants_BL_att_2015_2025 <- map_dfr(
+  onglets_BL_att,
+  ~ read_excel(integrants_BL_att, sheet = .x) %>%
+    clean_names() %>%   # met les noms en snake_case
+    select(nom, prenom, moyenne, rang, rang_cc)
+)
+
+### 2. fusion des bases
+
+bdd_2 <- left_join(bdd_sans_doublon, bdd_points_2, 
                  by = c("X.annee_courante",
                         "X.id_etudiant",
                         "X.code_matiere"))
@@ -167,12 +152,17 @@ clean_text <- function(x, first_only = TRUE) {
 
 bdd <- bdd %>% mutate(id = paste0(clean_text(nom, TRUE), clean_text(prenom, TRUE)))
 
+
 integrants_maths_2015_2025 <- integrants_maths_2015_2025 %>%
   mutate(id = paste0(clean_text(nom, TRUE), clean_text(prenom, TRUE)))
 
+integrants_maths_2015_2025 %>%
+  count(id, sort = TRUE) %>%
+  filter(n > 1)
+
+
 bdd_x <- bdd %>%
   left_join(integrants_maths_2015_2025, by = "id")
-
 
 # Etudes des quelques cas non appariés
 non_appariees <- integrants_maths_2015_2025 %>%
@@ -198,25 +188,24 @@ bdd_y <- bdd_x %>%
     id == "blaiechamine" ~ 2074L,
     TRUE ~ ccc_ran_com))
 
-test <- bdd_y %>% filter(id %in% c("diopn","seghaieraziz","mahjoubibeyrem","blaiechamine"))
-
 # Restait une seule interrogation : Laurie BANOS a-t-elle changé de nom de famille
-
 test2 <- bdd_y %>%  filter(id == "pinellaurie")
 # ça ne semble pas être Laurie PINEL et l'autre Laurie 'LETERRIER' a une affectation donc a priori non
 
 ################# Création des variables de travail ########################"""
 
+print(names(bdd_y))
+
 bdd_2 <- bdd_y %>%
+  filter(grepl("SORT", voie_lib, ignore.case = TRUE) != TRUE) %>% 
+  rename(nom = nom.x, prenom = prenom.x) %>%  # Renommage des colonnes
   mutate(
-    nom = nom.x,
-    prenom=prenom.x,
     annee_scolaire = as.character(paste0(as.numeric(annee),"-",as.numeric(annee)+1)),
     annee_ecole = case_when(
       substr(voie_lib, 1, 2) == "1A" ~ "1A",
       substr(voie_lib, 1, 2) == "2A" ~ "2A",
       substr(voie_lib, 1, 2) == "3A" ~ "3A",
-      grepl("Mast", voie_lib, ignore.case = TRUE) == TRUE ~ "3A",
+      grepl("Mast|SDDP", voie_lib, ignore.case = TRUE) == TRUE ~ "3A",
       TRUE ~ "Autres"
     ),
     statut_etudiant = case_when(
@@ -243,32 +232,39 @@ bdd_2 <- bdd_y %>%
       substr(voie_lib, 1, 2) == "1A" & grepl("Eco", voie_lib, ignore.case = TRUE) ~ "Eco",
       substr(voie_lib, 1, 2) == "1A" & grepl("Interne", voie_lib, ignore.case = TRUE) ~ "Interne",
       substr(voie_lib, 1, 2) == "1A" & grepl("Stid", voie_lib, ignore.case = TRUE) ~ "But",
-      substr(voie_lib, 1, 2) == "1A" ~ "Autres", 
+      substr(voie_lib, 1, 2) == "1A" ~ "Autres",
+      TRUE ~ NA_character_
     ),
     filiere_2A = case_when(
-      substr(voie_lib, 1, 2) == "2A" & grepl("Menu 1", voie_lib, ignore.case = TRUE) ~ "ATPA",
-      substr(voie_lib, 1, 2) == "2A" & grepl("Menu 2|Menu 3|DIGISPORT", voie_lib, ignore.case = TRUE) ~ "SB/GS/DIGISPORT",
-      substr(voie_lib, 1, 2) == "2A" & grepl("Menu 4", voie_lib, ignore.case = TRUE) ~ "ID/STD",
-      substr(voie_lib, 1, 2) == "2A" & grepl("Menu 5", voie_lib, ignore.case = TRUE) ~ "MES/EMOS",
-      substr(voie_lib, 1, 2) == "2A" & grepl("Menu 6", voie_lib, ignore.case = TRUE) ~ "MSP/ES",
-      substr(voie_lib, 1, 2) == "2A" & grepl("Menu 7", voie_lib, ignore.case = TRUE) ~ "GR",
-      substr(voie_lib, 1, 2) == "2A" & grepl("Menu 8", voie_lib, ignore.case = TRUE) ~ "MAR",
-      substr(voie_lib, 1, 2) == "2A" & grepl("Menu 9", voie_lib, ignore.case = TRUE) ~ "ERASMUS OUT",
-      substr(voie_lib, 1, 2) == "2A" ~ "Autres"    
-  ),
+      substr(voie_lib, 1, 2) == "2A" & grepl("ATT", voie_lib, ignore.case = TRUE) ~ "ATT",     
+      substr(voie_lib, 1, 2) == "2A" & grepl("Menu 1|ATPA", voie_lib, ignore.case = TRUE) ~ "ATPA",
+      substr(voie_lib, 1, 2) == "2A" & grepl("Menu 2|Menu 3|SB|GS|GSS", voie_lib, ignore.case = TRUE) ~ "SB/GS",
+      substr(voie_lib, 1, 2) == "2A" & grepl("Menu 4|ID|STD", voie_lib, ignore.case = TRUE) ~ "ID/STD",
+      substr(voie_lib, 1, 2) == "2A" & grepl("Menu 5|MES|EMOS", voie_lib, ignore.case = TRUE) ~ "MES/EMOS",
+      substr(voie_lib, 1, 2) == "2A" & grepl("Menu 6|MSP|ES", voie_lib, ignore.case = TRUE) ~ "MSP/ES",
+      substr(voie_lib, 1, 2) == "2A" & grepl("Menu 7|GR", voie_lib, ignore.case = TRUE) ~ "GR",
+      substr(voie_lib, 1, 2) == "2A" & grepl("Menu 8|MAR", voie_lib, ignore.case = TRUE) ~ "MAR",
+      substr(voie_lib, 1, 2) == "2A" & grepl("Menu 9|SCOL EXT|ERASMUS OUT", voie_lib, ignore.case = TRUE) ~ "SCOL EXT",
+      substr(voie_lib, 1, 2) == "2A" & grepl("DIGISPORT", voie_lib, ignore.case = TRUE) ~ "DIGISPORT",
+      substr(voie_lib, 1, 2) == "2A" ~ "Autres",
+      TRUE ~ NA_character_
+    ),
     filiere_3A = case_when(
-      substr(voie_lib, 1, 2) == "3A" & grepl("Att,Master", voie_lib, ignore.case = TRUE) ~ "MSP",
-      substr(voie_lib, 1, 2) == "3A" & grepl("GDRIF/GR", voie_lib, ignore.case = TRUE) ~ "GR",
-      substr(voie_lib, 1, 2) == "3A" & grepl("GS", voie_lib, ignore.case = TRUE) ~ "GS",
-      substr(voie_lib, 1, 2) == "3A" & grepl("MKT", voie_lib, ignore.case = TRUE) ~ "MKT",
-      substr(voie_lib, 1, 2) == "3A" & grepl("ID", voie_lib, ignore.case = TRUE) ~ "ID",
-      substr(voie_lib, 1, 2) == "3A" & grepl("ISTS", voie_lib, ignore.case = TRUE) ~ "ISTS",
-      substr(voie_lib, 1, 2) == "3A" & grepl("MES", voie_lib, ignore.case = TRUE) ~ "MES",
-      substr(voie_lib, 1, 2) == "3A" & grepl("M", voie_lib, ignore.case = TRUE) ~ "M",
-      substr(voie_lib, 1, 2) == "3A" & grepl("SID", voie_lib, ignore.case = TRUE) ~ "SID",
-      substr(voie_lib, 1, 2) == "3A" & grepl("SV", voie_lib, ignore.case = TRUE) ~ "SV",
+      substr(voie_lib, 1, 2) == "3A" & grepl("MES|ISTS", voie_lib, ignore.case = TRUE) ~ "MES",
+      substr(voie_lib, 1, 2) == "3A" & grepl("MSP", voie_lib, ignore.case = TRUE) ~ "MSP",
       substr(voie_lib, 1, 2) == "3A" & grepl("ES", voie_lib, ignore.case = TRUE) ~ "ES",
-      substr(voie_lib, 1, 2) == "3A" ~ "Autres"    
+      substr(voie_lib, 1, 2) == "3A" & grepl("STD", voie_lib, ignore.case = TRUE) ~ "STD",     
+      substr(voie_lib, 1, 2) == "3A" & grepl("EMOS", voie_lib, ignore.case = TRUE) ~ "EMOS",
+      substr(voie_lib, 1, 2) == "3A" & grepl("GDRIF|GDRIF/GR|GR|3A GR", voie_lib, ignore.case = TRUE) ~ "GR",
+      substr(voie_lib, 1, 2) == "3A" & grepl("GS", voie_lib, ignore.case = TRUE) ~ "GS",
+      substr(voie_lib, 1, 2) == "3A" & grepl("MKT|3A M", voie_lib, ignore.case = TRUE) ~ "MKT",
+      substr(voie_lib, 1, 2) == "3A" & grepl("ID", voie_lib, ignore.case = TRUE) ~ "ID",
+      substr(voie_lib, 1, 2) == "3A" & grepl("SBIO|SV|3A SBIO", voie_lib, ignore.case = TRUE) ~ "SBIO",
+      substr(voie_lib, 1, 2) == "3A" & grepl("DIGISPORT", voie_lib, ignore.case = TRUE) ~ "DIGISPORT",
+      substr(voie_lib, 1, 2) == "3A" & grepl("ATPA", voie_lib, ignore.case = TRUE) ~ "ATPA",
+      substr(voie_lib, 1, 2) == "3A" & grepl("SCOL EXT", voie_lib, ignore.case = TRUE) ~ "SCOL EXT",
+      substr(voie_lib, 1, 2) == "3A" ~ "Autres",
+      TRUE ~ NA_character_
     ),
     sexe = case_when(
       libelle_etat_civil == "Monsieur" ~ "Homme",
@@ -277,7 +273,8 @@ bdd_2 <- bdd_y %>%
     ),
     nationalite = case_when(
       id_nationalite == 100 ~ "Français",
-      TRUE ~"Étranger"
+      id_nationalite != 100 & substr(id_nationalite, 1, 1) == "1" ~ "UE",
+      TRUE ~ "Étranger hors UE"
     ),
     cat_matiere = case_when(
       id_type_matiere == 1 ~"Informatique",
@@ -287,10 +284,20 @@ bdd_2 <- bdd_y %>%
       TRUE ~ "Autres"
     )
   ) %>% 
-  select(-c(prenom.y, nom.y, prenom.x, nom.x, id))
+  # Suppression des colonnes indésirables
+  select(-any_of(c("nom.y", "prenom.y", "id")))
+
+table(bdd_2$filiere_2A)
+
+autres_restants <- bdd_2 %>% 
+  filter(filiere_2A == "AUTRES") %>%
+  select(voie_lib, annee) %>% 
+  distinct
+
+table(bdd_2$annee_ecole)
+
 
 # Récupération du travail de Stéphane sur les filières 3A
-
 filieres_stephane_3A <- readxl::read_xlsx("data/modifs stephane/bdd_2015_2024 explo.xlsx", sheet = "Filières") %>% 
   select(matiere, annee, filiere_3Abis)
 filieres_stephane_3A$annee <- substr(filieres_stephane_3A$annee,1,4)
@@ -301,6 +308,9 @@ filieres_stephane_3A <- filieres_stephane_3A %>%
 bdd_3 <- left_join(bdd_2,filieres_stephane_3A, 
                    by = c("annee", "matiere"),
                    keep = FALSE)
+
+
+table(bdd_3$annee_ecole)
 
 # Seules les variables de note, bonus, coeff et rang sont numérisées
 
@@ -382,7 +392,7 @@ bdd_4 <- numeriser(
 bdd_4 <- bdd_4 %>% arrange(desc(annee), voie_lib, nom) %>% 
   rename(annee=annee) %>% 
   select(-c("situation","X","rattrapage_max", "RES1", "RHS1", "RIS1", "RSS1",
-            "RES2", "RHS2", "RIS2", "RSS2","nom","prenom","redoublement"))
+            "RES2", "RHS2", "RIS2", "RSS2","redoublement"))
 
 #########  Création des variables redoublement et exclusion_demission 
 ######### Elles  ne sont pas bien renseignées dans Pamlemousse ############
@@ -480,35 +490,34 @@ bdd_7 <- bdd_7 %>%
     grepl("mpi|mp2i|math[\\s\\-]*phys[\\s\\-]*info", etab_origine_formation, ignore.case = TRUE) ~ "MPI",
     grepl("pc|ps", etab_origine_formation, ignore.case = TRUE) ~ "PC/PSI",
     grepl("mp", etab_origine_formation, ignore.case = TRUE) ~ "MP",
-    grepl("math", concours_origine, ignore.case = TRUE) ~ "MATH_NC",
-    TRUE ~ NA_character_
+    grepl("math", concours_origine, ignore.case = TRUE) ~ "MP",
+    TRUE ~ "MP"
   ))
 
 # recoder spe_entree pour ECO
 bdd_7$spe_entree <- ifelse(bdd_7$concours_origine =="Concours externe : spécialité 'économie et sciences sociales'",
-                           "Eco BL", 
+                           "BL", 
                            ifelse(bdd_7$concours_origine =="concours externe : spécialité 'économie et sciences sociales'",
-                                  "Eco BL",
+                                  "BL",
                                   ifelse (bdd_7$concours_origine == "Concours externe : spécialité 'économie et gestion'",
-                                          "Eco D2",
+                                          "D2",
                                           bdd_7$spe_entree)))
+table(bdd_7$concours_origine)
 
 # recoder spe_entree pour Autres
-bdd_7$spe_entree <- ifelse(bdd_7$concours_origine =="Admission sur titres (dossier + entretien) : niveau L3",
-                           "AST 1A", 
-                           ifelse(bdd_7$concours_origine =="Admission sur titres (dossier + entretien) : niveau M1 ou plus, admission en 1ère année",
-                                  "AST 1A",
-                                  ifelse (bdd_7$concours_origine == "Admission sur titres (dossier + entretien) : niveau M1 ou plus, admission en 2e année",
-                                          "AST 2A",
-                                          ifelse (bdd_7$concours_origine == "Concours externe",
-                                                  "ERASMUS - Contractuels",
-                                                  ifelse (bdd_7$concours_origine == "Contractuel",
-                                                          "ERASMUS - Contractuels",
-                                                          ifelse (bdd_7$concours_origine == "Erasmus",
-                                                                  "ERASMUS - Contractuels",
-                                                                  bdd_7$spe_entree))))))
+bdd_7 <- bdd_7 %>%
+  mutate(
+    spe_entree = case_when(
+      grepl("IUT STID", concours_origine, ignore.case = TRUE) ~ "BUT",
+      grepl("AST-1A", voie_entree, ignore.case = TRUE) ~ "AST-1A",
+      grepl("AST-2A", voie_entree, ignore.case = TRUE) ~ "AST-2A",
+      concours_origine == "Concours interne" ~ "INSEE",
+      concours_origine %in% c("Contractuel", "Erasmus") ~ "ERASMUS",
+      TRUE ~ spe_entree  
+    )
+  )
 
-table(bdd_7$spe_entree)
+table(bdd_7$spe_entree, useNA = "ifany")
 
 # Il s'agit de continuer d'affiner à partir de tous les cas possibles
 sort(table(bdd_7$etab_origine_formation), decreasing = TRUE)
@@ -529,6 +538,9 @@ bdd_7$bloc_an<- ifelse(bdd_7$annee %in% c(2015,2016,2017),
                                       ifelse(bdd_7$annee %in% c(2021,2022,2023),
                                              "2021-2023",
                                              "2024-2025")))
+
+bdd_7 <- bdd_7 %>% 
+  select(-c("nom","prenom"))
 
 # Export en csv
 write.csv2(bdd_7, "data/bdd_2015_2025.csv", row.names = FALSE)
