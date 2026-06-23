@@ -77,7 +77,7 @@ integrants_maths_att_2015_2025 <- map_dfr(
   onglets_math_att,
   ~ read_excel(integrants_maths_att, sheet = .x) %>%
     clean_names() %>%   # met les noms en snake_case
-    select(nom, prenom, ccc_ran_com)
+    select(nom, prenom, ccc_ran_com) 
 )
 
 onglets_math_ing <- excel_sheets(integrants_maths_ing)
@@ -89,21 +89,88 @@ integrants_maths_ing_2015_2025 <- map_dfr(
     select(nom, prenom, ccc_ran_com)
 )
 
-integrants_maths_2015_2025 <- rbind(integrants_maths_att_2015_2025,integrants_maths_ing_2015_2025)
+integrants_maths_2015_2025 <- bind_rows(integrants_maths_att_2015_2025,integrants_maths_ing_2015_2025) %>% 
+  rename(rang_cc_maths = ccc_ran_com)
 
 ### 1.4.Lecture des fichiers d'admission au concours BL
 
 integrants_BL_att <- "data/admissions/integrants_BL_attachés_2015_2025.xlsx"
-#integrants_BL_ing <- "data/admissions/integrants_BL_ingenieurs_2015_2025.xlsx"
+integrants_BL_ing <- "data/admissions/integrants_BL_ingénieurs_2015_2025.xlsx"
 
 onglets_BL_att <- excel_sheets(integrants_BL_att)
 
 integrants_BL_att_2015_2025 <- map_dfr(
   onglets_BL_att,
   ~ read_excel(integrants_BL_att, sheet = .x) %>%
-    clean_names() %>%   # met les noms en snake_case
-    select(nom, prenom, moyenne, rang, rang_cc)
-)
+    clean_names() %>%
+    select(any_of(c("nom", "prenom", "moyenne", "rang", "rang_cc"))) %>%
+    mutate(
+      moyenne = as.numeric(moyenne),
+      rang = as.numeric(rang),
+      rang_cc = as.numeric(rang_cc)
+    )
+) %>%
+  filter(!if_all(everything(), is.na))
+
+
+onglets_BL_ing <- excel_sheets(integrants_BL_ing)
+
+integrants_BL_ing_2015_2025 <- map_dfr(
+  onglets_BL_ing,
+  ~ read_excel(integrants_BL_ing, sheet = .x) %>%
+    clean_names() %>%
+    select(any_of(c("nom", "prenom", "moyenne", "rang", "rang_cc"))) %>%
+    mutate(
+      moyenne = as.numeric(moyenne),
+      rang = as.numeric(rang),
+      rang_cc = as.numeric(rang_cc)
+    )
+) %>%
+  filter(!if_all(everything(), is.na))
+
+integrants_BL_2015_2025 <- bind_rows(integrants_BL_att_2015_2025,integrants_BL_ing_2015_2025) %>% 
+  rename(rang_cc_bl = rang_cc) %>% 
+  select(-rang)
+
+### 1.5.Lecture des fichiers d'admission au concours BL
+
+integrants_D2_att <- "data/admissions/integrants_D2_attachés_2015_2025.xlsx"
+integrants_D2_ing <- "data/admissions/integrants_D2_ingénieurs_2015_2025.xlsx"
+
+onglets_D2_att <- excel_sheets(integrants_D2_att)
+
+integrants_D2_att_2015_2025 <- map_dfr(
+  onglets_D2_att,
+  ~ read_excel(integrants_D2_att, sheet = .x) %>%
+    clean_names() %>%
+    select(any_of(c("nom", "prenom", "moyenne", "rang", "rang_cc"))) %>%
+    mutate(
+      moyenne = as.numeric(moyenne),
+      rang = as.numeric(rang),
+      rang_cc = as.numeric(rang_cc)
+    )
+) %>%
+  filter(!if_all(c(rang, rang_cc), is.na))
+
+
+onglets_D2_ing <- excel_sheets(integrants_D2_ing)
+
+integrants_D2_ing_2015_2025 <- map_dfr(
+  onglets_D2_ing,
+  ~ read_excel(integrants_D2_ing, sheet = .x) %>%
+    clean_names() %>%
+    select(any_of(c("nom", "prenom", "moyenne", "rang", "rang_cc"))) %>%
+    mutate(
+      moyenne = as.numeric(moyenne),
+      rang = as.numeric(rang),
+      rang_cc = as.numeric(rang_cc)
+    )
+) %>%
+  filter(!if_all(c(moyenne, rang), is.na))
+
+integrants_D2_2015_2025 <- bind_rows(integrants_D2_att_2015_2025,integrants_D2_ing_2015_2025) %>% 
+  rename(rang_cc_d2 = rang_cc) %>% 
+  select(-rang)
 
 ### 2. fusion des bases
 
@@ -156,13 +223,17 @@ bdd <- bdd %>% mutate(id = paste0(clean_text(nom, TRUE), clean_text(prenom, TRUE
 integrants_maths_2015_2025 <- integrants_maths_2015_2025 %>%
   mutate(id = paste0(clean_text(nom, TRUE), clean_text(prenom, TRUE)))
 
-integrants_maths_2015_2025 %>%
-  count(id, sort = TRUE) %>%
-  filter(n > 1)
+integrants_BL_2015_2025 <- integrants_BL_2015_2025 %>%
+  mutate(id = paste0(clean_text(nom, TRUE), clean_text(prenom, TRUE)))
+
+integrants_D2_2015_2025 <- integrants_D2_2015_2025 %>%
+  mutate(id = paste0(clean_text(nom, TRUE), clean_text(prenom, TRUE)))
 
 
 bdd_x <- bdd %>%
-  left_join(integrants_maths_2015_2025, by = "id")
+  left_join(integrants_maths_2015_2025, by = "id") %>%
+  left_join(integrants_BL_2015_2025, by = "id") %>%
+  left_join(integrants_D2_2015_2025, by = "id")
 
 # Etudes des quelques cas non appariés
 non_appariees <- integrants_maths_2015_2025 %>%
@@ -181,16 +252,28 @@ taux_appariement
 
 # Ajout des non appariés à la main
 bdd_y <- bdd_x %>%
-  mutate(ccc_ran_com = case_when(
+  mutate(rang_cc_maths = case_when(
     id == "diopn" ~ 2393L,
     id == "seghaieraziz" ~ 2548L,
     id == "mahjoubibeyrem" ~ 2541L,
     id == "blaiechamine" ~ 2074L,
-    TRUE ~ ccc_ran_com))
+    TRUE ~ rang_cc_maths))
 
 # Restait une seule interrogation : Laurie BANOS a-t-elle changé de nom de famille
 test2 <- bdd_y %>%  filter(id == "pinellaurie")
 # ça ne semble pas être Laurie PINEL et l'autre Laurie 'LETERRIER' a une affectation donc a priori non
+
+
+# Etudes des quelques cas non appariés BL
+non_appariees_BL <- integrants_BL_2015_2025 %>%
+  anti_join(bdd, by = "id") %>% 
+  filter(!is.na(nom))
+
+# Etudes des quelques cas non appariés D2
+non_appariees_D2 <- integrants_D2_2015_2025 %>%
+  anti_join(bdd, by = "id") %>% 
+  filter(!is.na(nom))
+
 
 ################# Création des variables de travail ########################"""
 
@@ -210,9 +293,9 @@ bdd_2 <- bdd_y %>%
     ),
     statut_etudiant = case_when(
       grepl("ing", libelle_statut_etudiant, ignore.case = TRUE) == TRUE ~ "Ingénieur",
-      grepl("att", libelle_statut_etudiant, ignore.case = TRUE) == TRUE ~ "Attaché",
-      grepl("Mastère", libelle_statut_etudiant) == TRUE ~ "Mastère",
-      grepl("Master", libelle_statut_etudiant) == TRUE ~ "Master",
+      grepl("att|Master ES|Master MSP|Master STD", libelle_statut_etudiant, ignore.case = TRUE) == TRUE ~ "Attaché",
+      grepl("MSD", libelle_statut_etudiant) == TRUE ~ "MSD",
+      grepl("MSSD", libelle_statut_etudiant) == TRUE ~ "MS",
       TRUE ~ "Autres"),
     voie_entree = case_when(
       grepl("Concours", concours_origine) == TRUE ~ "Concours-1A",
@@ -285,7 +368,7 @@ bdd_2 <- bdd_y %>%
     )
   ) %>% 
   # Suppression des colonnes indésirables
-  select(-any_of(c("nom.y", "prenom.y", "id")))
+  select(-any_of(c("nom.y", "prenom.y", "id","nom.x.x","prenom.x.x","moyenne.x","nom.y.y","prenom.y.y","moyenne.y")))
 
 table(bdd_2$filiere_2A)
 
@@ -386,7 +469,7 @@ bdd_4 <- numeriser(
   "toeic",
   "MES1", "MHS1", "MIS1", "MSS1",
   "MES2", "MHS2", "MIS2", "MSS2",
-  "MGS1", "MGS2","ccc_ran_com"
+  "MGS1", "MGS2","rang_cc_maths","rang_cc_bl","rang_cc_d2"
 ))
 
 bdd_4 <- bdd_4 %>% arrange(desc(annee), voie_lib, nom) %>% 
@@ -539,8 +622,16 @@ bdd_7$bloc_an<- ifelse(bdd_7$annee %in% c(2015,2016,2017),
                                              "2021-2023",
                                              "2024-2025")))
 
-bdd_7 <- bdd_7 %>% 
-  select(-c("nom","prenom"))
+# Correction de la variable att_ing
+
+bdd_8 <- bdd_7 %>% 
+  select(annee, voie_lib, nom, prenom, statut_etudiant, att_ing)
+
+bdd_9 <- bdd_8[substr(tolower(bdd_8$statut_etudiant), 1, 3) != substr(tolower(bdd_8$att_ing), 1, 3), ] %>% 
+  distinct
+
+# Export en xlsx
+write_xlsx(bdd_9, path = "att_ing.xlsx")
 
 # Export en csv
 write.csv2(bdd_7, "data/bdd_2015_2025.csv", row.names = FALSE)
@@ -629,7 +720,9 @@ bdd_7$bonus_type <- structure(bdd_7$bonus_type, label = "type de bonus (à déte
 bdd_7$id_commentaire_bulletin_ref <- structure(bdd_7$id_commentaire_bulletin_ref, label = "Décision de validation (cf table table_bulletin_ref_id_bonus)")
 bdd_7$verrou <- structure(bdd_7$verrou, label = "Variable récupérée dans commentaire (à déterminer)")
 #bdd_7$id_crypte <- structure(bdd_7$id_crypte, label = "Identifiant crypté de l'étudiant")
-bdd_7$ccc_ran_com <- structure(bdd_7$ccc_ran_com, label = "Classement au concours commun mathématiques")
+bdd_7$rang_cc_maths <- structure(bdd_7$rang_cc_maths, label = "Classement au concours commun mathématiques")
+bdd_7$rang_cc_bl <- structure(bdd_7$rang_cc_bl, label = "Classement au concours BL")
+bdd_7$rang_cc_d2 <- structure(bdd_7$rang_cc_d2, label = "Classement au concours D2")
 bdd_7$spe_entree <- structure(bdd_7$spe_entree, label = "Spécialité à l'entrée")
 bdd_7$prepa_etoile <- structure(bdd_7$prepa_etoile, label = "Provenance d'une prépa étoile")
 bdd_7$redoublement <- structure(bdd_7$redoublement, label = "Redoublement")
