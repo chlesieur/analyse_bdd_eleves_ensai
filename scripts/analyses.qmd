@@ -24,21 +24,48 @@ library(pROC)
 bdd <- read_parquet(here("data","bdd_2015_2025.parquet")) %>% 
   filter(annee_ecole != "Autres")
 
-# creation boucles sortie stat par bloc annee
 bdd$bloc_an<- ifelse(bdd$annee %in% c(2015,2016,2017),"2015-2017",ifelse (bdd$annee %in% c(2018,2019,2020),"2018-2020",ifelse(bdd$annee %in% c(2021,2022),"2021-2022","2023-2025")))
-
-# ajout du max et du rang standardisé
-bdd <- bdd %>%
-  group_by(annee) %>%
-  mutate(rang_max = max(ccc_ran_com, na.rm = TRUE),
-         ccc_ran_com_standard = ccc_ran_com/rang_max) %>%
-  ungroup()
 
 # travaux sur 1A et 2A
 bdd_1A_2A <- bdd[bdd$annee_ecole %in% c("1A","2A"),]
 
 #  conserver une ligne par eleve et par année
 bdd_1A_2A_unique <- bdd_1A_2A[!duplicated(cbind(bdd_1A_2A$id_etudiant,bdd_1A_2A$annee)),]
+
+# travaux sur 1A et 2A
+bdd_1A_2A <- bdd[bdd$annee_ecole %in% c("1A","2A"),]
+
+#  conserver une ligne par eleve et par année
+bdd_1A_2A_unique <- bdd_1A_2A[!duplicated(cbind(bdd_1A_2A$id_etudiant,bdd_1A_2A$annee)),]
+
+# ajout du max et du rang standardisé
+bdd_1A_2A_unique <- bdd_1A_2A_unique %>%
+  # 2. Calculer le meilleur rang (comme avant)
+  group_by(annee, spe_entree) %>%
+  mutate(
+    # On prend le meilleur rang parmi les colonnes disponibles
+    meilleur_rang = pmin(
+      rang_cc_maths,
+      rang_cc_bl,
+      rang_cc_d2,
+      na.rm = TRUE
+    ),
+    # Standardisation par année/filière
+    meilleur_rang_max = max(meilleur_rang, na.rm = TRUE),
+    meilleur_rang_standard = meilleur_rang / meilleur_rang_max,
+    percentile_rang = (1 - meilleur_rang_standard) * 100
+  ) %>%
+  ungroup() %>%
+  # 3. Intégrer la moyenne générale (si tu l'as)
+  group_by(annee, spe_entree) %>%
+  mutate(
+    percentile_moyenne = percent_rank(moyenne_generale) * 100
+  ) %>%
+  ungroup() %>%
+  # 4. Calculer le Score IDIT
+  mutate(
+    Score_IDIT = (percentile_rang * 1) + (percentile_moyenne * 0)
+  )
 
 bdd_bloc_1A_2A <- bdd_1A_2A_unique %>%
   filter(annee_ecole %in% c("1A","2A")) %>%
@@ -116,6 +143,94 @@ bdd_3A$fil_3A <- bdd_3A$filiere_3A
 #                                       ifelse(bdd_3A$filiere_3A == "SV","SBIO",ifelse(bdd_3A$filiere_3A == "ISTS","MES",bdd_3A$filiere_3A)))))
 
 ```
+
+
+# 0. Test des scores IDIT
+```{r}
+bdd_1A_2A_unique_2 <- bdd_1A_2A_unique %>%
+  mutate(
+    quartile_score = ntile(Score_IDIT, 4),
+    quartile_label = case_when(
+      quartile_score == 1 ~ "Q1 (0-25%)",
+      quartile_score == 2 ~ "Q2 (25-50%)",
+      quartile_score == 3 ~ "Q3 (50-75%)",
+      quartile_score == 4 ~ "Q4 (75-100%)"
+    )
+  )
+```
+
+```{r}
+bdd_1A_2A_unique_concours <- bdd_1A_2A_unique %>%
+  filter(spe_entree %in% c("MPI","D2","BL","MP","PC/PSI")) %>% 
+  group_by(spe_entree) %>%
+  summarise(
+    n = n(),
+    Score_IDIT_moyen = mean(Score_IDIT, na.rm = TRUE),
+    Score_IDIT_mediane = median(Score_IDIT, na.rm = TRUE),
+    ecart_type = sd(Score_IDIT, na.rm = TRUE)
+  ) %>%
+  arrange(desc(Score_IDIT_moyen))
+```
+
+```{r}
+bdd_1A_2A_unique_concours <- bdd_1A_2A_unique %>% 
+  filter(spe_entree %in% c("MPI","MP","PC/PSI","BL","D2"))
+
+ggplot(bdd_1A_2A_unique_concours, aes(x = spe_entree, y = Score_IDIT, fill = spe_entree)) +
+  geom_boxplot(alpha = 0.7) +
+  labs(
+    title = "Comparaison du Score IDIT par filière d'entrée",
+    x = "Filière",
+    y = "Score IDIT (0-100)"
+  ) +
+  theme_minimal()
+```
+```{r}
+aov(Score_IDIT ~ spe_entree, data = bdd_1A_2A_unique_2) %>% summary()
+```
+# 3.3. Rang d'intégration et rang à l'école
+
+```{r}
+bdd_1A_2A_unique_rang <- bdd_1A_2A_unique_concours %>% 
+  group_by(annee,annee_ecole) %>% 
+  mutate(
+    rang = rank(-moyenne_generale, ties.method = "min"),  # - pour un classement décroissant
+    # Création des variables spécifiques
+    rang1A = ifelse(annee_ecole == "1A", rang, NA_real_),
+    rang2A = ifelse(annee_ecole == "2A", rang, NA_real_)
+  ) %>%
+  ungroup() %>%
+  select(-rang)  # On supprime la colonne temporaire 'rang'
+
+```
+
+```{r}
+
+reg <- lm(bdd_1A_2A_unique_rang$rang1A ~ bdd_1A_2A_unique_rang$Score_IDIT)
+
+summary(reg)
+
+plot(bdd_1A_2A_unique_rang$Score_IDIT, bdd_1A_2A_unique_rang$rang1A,
+     xlab = "Score_IDIT", ylab = "Rang 1A", main = "Une relation réussite 1A / rang d'admission ?")
+
+abline(lm(bdd_1A_2A_unique_rang$moyenne_generale ~ bdd_1A_2A_unique_rang$Score_IDIT), col = "red")
+
+
+```
+```{r}
+bdd_1A_2A_unique_rang_MP <- bdd_1A_2A_unique_rang %>% filter(spe_entree == "MP")
+
+reg <- lm(bdd_1A_2A_unique_rang_MP$rang1A ~ bdd_1A_2A_unique_rang_MP$rang_cc_maths)
+
+summary(reg)
+
+plot(bdd_1A_2A_unique_rang$Score_IDIT, bdd_1A_2A_unique_rang$rang1A,
+     xlab = "Score_IDIT", ylab = "Rang 1A", main = "Une relation réussite 1A / rang d'admission ?")
+
+
+
+```
+
 
 ## 1. Données de cadrage
 
@@ -336,11 +451,101 @@ nb_eleve_par_annee %>%
 
 ### 1.4. Nombre de redoublements par année
 
+#### Par statut
+
+```{r}
+base_cohorte <- bdd_1A_2A_unique %>%
+  arrange(id_etudiant, annee) %>%
+  group_by(id_etudiant) %>%
+  mutate(
+    redoublement_1A_cohorte = lead(redoublement_1A),
+    exclusion_1A_cohorte    = lead(exclusion_demission_1A)
+  ) %>%
+  ungroup() %>% 
+  filter(annee_ecole == "1A") 
+
+base_cohorte <- base_cohorte %>%
+  mutate(
+    echec_1A_cohorte = pmin(1, redoublement_1A_cohorte + exclusion_1A_cohorte)
+  )
+
+data_plot <- base_cohorte %>%
+  filter(statut_etudiant != "Autres") %>%
+  group_by(annee, statut_etudiant) %>%
+  summarise(
+    part_echec = mean(echec_1A_cohorte, na.rm = TRUE),
+    part_redoublants = mean(redoublement_1A_cohorte, na.rm = TRUE),
+    part_exclusion = mean(exclusion_1A_cohorte, na.rm = TRUE),
+    n = n(),
+    .groups = "drop"
+  )
+
+ggplot(data_plot, aes(
+  x = annee,
+  y = part_echec,
+  color = statut_etudiant,
+  group = statut_etudiant
+)) +
+  geom_line(size = 1) +
+  geom_point() +
+  labs(
+    title = "Échec en 1A (redoublement + exclusion/démission, logique cohorte)",
+    x = "Année (entrée en 1A)",
+    y = "Part d'échec",
+    color = "Statut étudiant"
+  ) +
+  theme_minimal()
+
+
+
+```
+
+### PAr voie
+
+#### Par statut
+
+```{r}
+data_plot <- base_cohorte %>%
+  filter(statut_etudiant == "Ingénieur",
+         annee != "2025") %>%
+  group_by(bloc_an, spe_entree) %>%
+  summarise(
+    n = n(),
+    .groups = "drop"
+  ) %>%
+  group_by(spe_entree) %>%
+  mutate(
+    part = n / sum(n)
+  ) %>%
+  ungroup()
+
+ggplot(data_plot, aes(
+  x = spe_entree,
+  y = part,
+  fill = spe_entree
+)) +
+  geom_col() +
+  facet_wrap(~ bloc_an) +
+  labs(
+    title = "Échec en 1A (redoublement + exclusion/démission, logique cohorte)",
+    x = "Spécialité d'entrée",
+    y = "Part"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+
+```
+```{r}
+table(base_cohorte$spe_entree, base_cohorte$echec_1A_cohorte)
+```
+
+
 ```{r}
 
 nb_eleve_par_annee <- bdd %>% 
-  distinct(id_etudiant, annee, annee_ecole, redoublement) %>%
-  count(annee, annee_ecole, redoublement) %>%                   
+  distinct(id_etudiant, annee, annee_ecole, redoublement_1A, statut_etudiant) %>%
+  count(annee, annee_ecole, redoublement_1A, statut_etudiant) %>%                   
   pivot_wider(
     names_from  = annee_ecole,                    
     values_from = n,
@@ -349,12 +554,101 @@ nb_eleve_par_annee <- bdd %>%
   )
 
 nb_eleve_par_annee %>%
-  filter(redoublement == 1) %>% 
+  filter(redoublement_1A == 1,
+         statut_etudiant != "Autres") %>% 
   kable(format = "html", caption = "Nombre d'élèves par année - niveau - statut") %>%
   kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
                 full_width = FALSE, position = "center")
 
 ```
+
+```{r}
+
+bdd_taux <- bdd %>%
+  filter(statut_etudiant %in% c("Attaché", "Ingénieur")) %>%
+  group_by(bloc_an, statut_etudiant) %>%
+  summarise(
+    total = n(),
+    redoublants = sum(redoublement == 1, na.rm = TRUE)
+  ) %>%
+  mutate(taux = redoublants / total * 100)
+```
+
+```{r}
+ggplot(bdd_taux,
+       aes(x = bloc_an, y = taux,
+           color = statut_etudiant,
+           group = statut_etudiant)) +
+  geom_line(size = 1) +
+  geom_point(size = 2) +
+  geom_text(aes(label = round(taux, 1)),
+            vjust = -1.2, size = 3, show.legend = FALSE) +
+  labs(
+    title = "Taux de redoublement (%) par statut étudiant et par année",
+    x = "Année",
+    y = "Taux de redoublement (%)",
+    color = "Statut étudiant"
+  ) +
+  theme_minimal(base_size = 10) +
+  theme(
+    plot.title = element_text(face = "bold"),
+    legend.position = "bottom"
+  )
+```
+
+```{r}
+library(tidyr)
+
+tableau_taux <- bdd %>%
+  filter(statut_etudiant %in% c("Attaché", "Ingénieur")) %>%
+  group_by(bloc_an, annee_ecole, statut_etudiant) %>%
+  summarise(
+    total = n(),
+    redoublants = sum(redoublement == 1, na.rm = TRUE),
+    taux = redoublants / total * 100,
+    .groups = "drop"
+  ) %>%
+  select(bloc_an, annee_ecole, statut_etudiant, taux) %>%
+  pivot_wider(
+    names_from = statut_etudiant,
+    values_from = taux
+  )
+```
+
+```{r}
+tableau_long <- tableau_taux %>%
+  pivot_longer(
+    cols = c(`Attaché`, `Ingénieur`),
+    names_to = "statut_etudiant",
+    values_to = "taux"
+  )
+```
+
+```{r}
+ggplot(tableau_long,
+       aes(x = factor(annee_ecole),
+           y = taux,
+           fill = statut_etudiant)) +
+  geom_bar(stat = "identity",
+           position = position_dodge(width = 0.8)) +
+  facet_wrap(~ bloc_an) +
+  geom_text(aes(label = round(taux, 1)),
+            position = position_dodge(width = 0.8),
+            vjust = -0.5,
+            size = 3) +
+  labs(
+    title = "Taux de redoublement (%) par statut étudiant",
+    x = "Année",
+    y = "Taux (%)",
+    fill = "Statut étudiant"
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(
+    plot.title = element_text(face = "bold"),
+    legend.position = "bottom"
+  )
+```
+
 
 ### 1.5. Nombre d'exclusions par année
 
@@ -468,7 +762,7 @@ ggplot(nb_eleves_3A_long, aes(x = factor(annee), y = pct, fill = fil_3A)) +
 ```
 ```{r}
 bdd_3A_ing <- bdd_3A %>%
-  filter(att_ing == "ingénieur", fil_3A != "Autres", fil_3A != "ES")
+  filter(statut_etudiant == "Ingénieur", fil_3A != "Autres", fil_3A != "ES")
 
 library(dplyr)
 library(tidyr)
@@ -483,7 +777,7 @@ tab_base <- bdd_3A_ing %>%
   group_by(fil_3A) %>%
   mutate(
     pct_col = 100 * n / sum(n),
-    pct_col_txt = format(round(pct_col, 1), decimal.mark = ",", nsmall = 1),
+    pct_col_txt = format(round(pct_col, 0)),
     valeur = paste0(n, " (", pct_col_txt, " %)")
   ) %>%
   ungroup()
@@ -493,7 +787,7 @@ totaux <- bdd_3A_ing %>%
   count(spe_entree) %>%
   mutate(
     pct_total = 100 * n / total_general,
-    pct_total_txt = format(round(pct_total, 1), decimal.mark = ",", nsmall = 1),
+    pct_total_txt = format(round(pct_total, 0)),
     Total = paste0(n, " (", pct_total_txt, " %)")
   ) %>%
   select(spe_entree, Total)
@@ -531,7 +825,7 @@ ft
 
 ```{r}
 bdd_3A_ing <- bdd_3A %>%
-  filter(att_ing == "ingénieur", fil_3A != "Autres", fil_3A != "ES")
+  filter(statut_etudiant == "Ingénieur", fil_3A != "Autres", fil_3A != "ES")
 
 
 library(dplyr)
@@ -743,22 +1037,21 @@ blues_palette <- c(
 )
 
 
-# retirer préfixe "nb_" pour l'affichage dans la légende via labels
 ggplot(
   taux_pct %>%
     mutate(spe_entree = factor(spe_entree, levels = ordre)),
-  aes(x = bloc_an, y = pct, fill = spe_entree)  # On garde fill = spe_entree
+  aes(x = bloc_an, y = pct, fill = spe_entree)
 ) +
   geom_col(position = "stack") +
   geom_text(
-    aes(label = paste0(pct, "%")),
+    aes(label = sprintf("%.0f%%", pct)),  # Modification ici pour arrondir
     position = position_stack(vjust = 0.5),
     size = 3, color = "white"
   ) +
   scale_fill_manual(
-    values = blues_palette,  # Palette bleue personnalisée
+    values = blues_palette,
     name = "Voie d'entrée",
-    labels = function(x) sub("^nb_", "", x)  # Nettoyer les noms
+    labels = function(x) sub("^nb_", "", x)
   ) +
   labs(
     title = "Répartition des élèves par voie d'entrée",
@@ -771,8 +1064,9 @@ ggplot(
     panel.grid.major = element_line(colour = "#f0f0f0"),
     panel.grid.minor = element_blank(),
     legend.position = "right",
-    legend.key.size = unit(0.5, "cm")  # Ajuste la taille des carrés de légende
+    legend.key.size = unit(0.5, "cm")
   )
+
 ```
 
 ```{r}
@@ -782,7 +1076,7 @@ nb_eleve_1A <- bdd %>%
   count(annee, att_ing, name = "n") %>%
   mutate(
     annee = as.numeric(as.character(annee)),
-    att_ing = factor(att_ing, levels = c("attaché", "ingénieur"))
+    statut_etudiant = factor(att_ing, levels = c("Attaché", "Ingénieur"))
   ) %>%
   complete(annee = 2015:2025, att_ing, fill = list(n = 0)) %>%
   group_by(annee) %>%
@@ -980,7 +1274,7 @@ bdd_bloc_1A_2A %>%
   filter(annee_ecole == "2A") %>%
   arrange(desc(bloc_an)) %>%
   setNames(c("Bloc", "Année", sub("moy_g_", "", names(.)[-c(1:2)]))) %>%  # Supprime "moy_g_" des noms de colonnes
-  kable(format = "html", caption = "Moyennes des élèves par bloc (1A)",
+  kable(format = "html", caption = "Moyennes des élèves par bloc (2A)",
         align = "c") %>%
   kable_styling(
     bootstrap_options = c("striped", "hover", "condensed"),
@@ -998,11 +1292,11 @@ bdd_bloc_1A_2A %>%
 
 # Préparation des données
 bdd_bloc_1A_2A %>%
-  select(bloc_an, annee_ecole, contains("moy_stat")) %>%
+  select(bloc_an, annee_ecole, contains("moy_stat"), -c("moy_stat_AST-2A","moy_stat_ERASMUS","moy_stat_AST-1A")) %>%
   filter(annee_ecole == "1A") %>%
   arrange(desc(bloc_an)) %>%
   setNames(c("Bloc", "Année", sub("moy_stat_", "", names(.)[-c(1:2)]))) %>%  # Supprime "moy_g_" des noms de colonnes
-  kable(format = "html", caption = "Moyennes des élèves par bloc (1A)",
+  kable(format = "html", caption = "Moyennes générale des élèves en 1A par blocs d'années",
         align = "c") %>%
   kable_styling(
     bootstrap_options = c("striped", "hover", "condensed"),
@@ -1019,11 +1313,11 @@ bdd_bloc_1A_2A %>%
 
 # Préparation des données
 bdd_bloc_1A_2A %>%
-  select(bloc_an, annee_ecole, contains("moy_stat")) %>%
+  select(bloc_an, annee_ecole, contains("moy_stat"), -c("moy_stat_AST-1A")) %>%
   filter(annee_ecole == "2A") %>%
   arrange(desc(bloc_an)) %>%
   setNames(c("Bloc", "Année", sub("moy_stat_", "", names(.)[-c(1:2)]))) %>%  # Supprime "moy_g_" des noms de colonnes
-  kable(format = "html", caption = "Moyennes des élèves par bloc (1A)",
+  kable(format = "html", caption = "Moyennes générale des élèves en 2A par blocs d'années",
         align = "c") %>%
   kable_styling(
     bootstrap_options = c("striped", "hover", "condensed"),
@@ -1044,7 +1338,7 @@ bdd_bloc_1A_2A %>%
 
 # Préparation des données
 bdd_bloc_1A_2A %>%
-  select(bloc_an, annee_ecole, contains("moy_inf")) %>%
+  select(bloc_an, annee_ecole, contains("moy_inf"), -c("moy_info_AST-2A")) %>%
   filter(annee_ecole == "1A") %>%
   arrange(desc(bloc_an)) %>%
   setNames(c("Bloc", "Année", sub("moy_info_", "", names(.)[-c(1:2)]))) %>%  # Supprime "moy_g_" des noms de colonnes
@@ -1069,7 +1363,7 @@ bdd_bloc_1A_2A %>%
   filter(annee_ecole == "2A") %>%
   arrange(desc(bloc_an)) %>%
   setNames(c("Bloc", "Année", sub("moy_info_", "", names(.)[-c(1:2)]))) %>%  # Supprime "moy_g_" des noms de colonnes
-  kable(format = "html", caption = "Moyennes des élèves par bloc (1A)",
+  kable(format = "html", caption = "Moyennes des élèves par bloc (2A)",
         align = "c") %>%
   kable_styling(
     bootstrap_options = c("striped", "hover", "condensed"),
@@ -1088,7 +1382,7 @@ bdd_bloc_1A_2A %>%
 
 # Préparation des données
 bdd_bloc_1A_2A %>%
-  select(bloc_an, annee_ecole, contains("moy_eco")) %>%
+  select(bloc_an, annee_ecole, contains("moy_eco"), -c("moy_eco_AST-2A")) %>%
   filter(annee_ecole == "1A") %>%
   arrange(desc(bloc_an)) %>%
   setNames(c("Bloc", "Année", sub("moy_eco_", "", names(.)[-c(1:2)]))) %>%  # Supprime "moy_g_" des noms de colonnes
@@ -1111,7 +1405,7 @@ bdd_bloc_1A_2A %>%
   filter(annee_ecole == "2A") %>%
   arrange(desc(bloc_an)) %>%
   setNames(c("Bloc", "Année", sub("moy_eco_", "", names(.)[-c(1:2)]))) %>%  # Supprime "moy_g_" des noms de colonnes
-  kable(format = "html", caption = "Moyennes des élèves par bloc (1A)",
+  kable(format = "html", caption = "Moyennes des élèves par bloc (2A)",
         align = "c") %>%
   kable_styling(
     bootstrap_options = c("striped", "hover", "condensed"),
@@ -1129,7 +1423,7 @@ bdd_bloc_1A_2A %>%
 
 # Préparation des données
 bdd_bloc_1A_2A %>%
-  select(bloc_an, annee_ecole, contains("moy_hum")) %>%
+  select(bloc_an, annee_ecole, contains("moy_hum"), -c("moy_hum_AST-2A")) %>%
   filter(annee_ecole == "1A") %>%
   arrange(desc(bloc_an)) %>%
   setNames(c("Bloc", "Année", sub("moy_hum_", "", names(.)[-c(1:2)]))) %>%  # Supprime "moy_g_" des noms de colonnes
@@ -1152,7 +1446,7 @@ bdd_bloc_1A_2A %>%
   filter(annee_ecole == "2A") %>%
   arrange(desc(bloc_an)) %>%
   setNames(c("Bloc", "Année", sub("moy_hum_", "", names(.)[-c(1:2)]))) %>%  # Supprime "moy_g_" des noms de colonnes
-  kable(format = "html", caption = "Moyennes des élèves par bloc (1A)",
+  kable(format = "html", caption = "Moyennes des élèves par bloc (2A)",
         align = "c") %>%
   kable_styling(
     bootstrap_options = c("striped", "hover", "condensed"),
@@ -1195,8 +1489,8 @@ bdd_bloc_1A_2A %>%
 ```{r}
 
 data_plot <- bdd_bloc_1A_2A %>%
-  select(bloc_an, annee_ecole, contains("prop12_g")) %>%
-  filter(annee_ecole == "1A") %>%
+  select(bloc_an, annee_ecole, contains("prop12_g"), -c("prop12_g_ERASMUS","prop12_g_AST-2A","prop12_g_AST-1A")) %>%
+  filter(annee_ecole == "1A", bloc_an == "2023-2025") %>%
   arrange(desc(bloc_an)) %>%
   pivot_longer(
     cols = contains("prop12_g"),
@@ -1207,65 +1501,130 @@ data_plot <- bdd_bloc_1A_2A %>%
     filiere = sub("prop12_g_", "", filiere),
     filiere = gsub("_", " ", filiere),
     filiere = tools::toTitleCase(filiere)
-  )
+  ) %>%
+  group_by(bloc_an, filiere) %>%  # Ajout du groupement
+  summarise(pourcentage = mean(pourcentage, na.rm = TRUE), .groups = "drop")  # Calcul de la moyenne
 
 # Limite max pour l'axe des pourcentages
 x_max <- max(data_plot$pourcentage, na.rm = TRUE) * 1.15
 
 # Graphique horizontal
+# Préparation des données : suppression des NA
+data_plot_clean <- data_plot %>%
+  filter(!is.na(pourcentage))
+
+# Calcul automatique de la limite supérieure (ajoute 5% de marge)
+y_max <- max(data_plot_clean$pourcentage, na.rm = TRUE) * 1.05
+
+# Préparation des données : suppression des NA
+data_plot_clean <- data_plot %>%
+  filter(!is.na(pourcentage))
+
+# Calcul automatique de la limite supérieure (ajoute 5% de marge)
+y_max <- max(data_plot_clean$pourcentage, na.rm = TRUE) * 1.05
+
+# Préparation des données : suppression des NA
+data_plot_clean <- data_plot %>%
+  filter(!is.na(pourcentage))
+
+# Calcul automatique de la limite supérieure (ajoute 5% de marge)
+y_max <- max(data_plot_clean$pourcentage, na.rm = TRUE) * 1.05
+
 ggplot(
-  data_plot,
+  data_plot_clean,
   aes(
-    x = reorder(filiere, pourcentage),
+    x = reorder(filiere, -pourcentage),  # Tri décroissant
     y = pourcentage,
     fill = factor(bloc_an)
   )
 ) +
   geom_col(position = position_dodge(width = 0.75), width = 0.7) +
   geom_text(
-    aes(label = paste0(round(pourcentage, 1), "%")),
+    aes(label = paste0(round(pourcentage, 0), "%")),
     position = position_dodge(width = 0.75),
-    hjust = -0.1,
-    size = 2.2,
+    vjust = -0.5,
+    size = 3.5,
     color = "black"
   ) +
-  coord_flip() +
-  scale_fill_brewer(
-    type = "seq",
-    palette = "Blues",
-    direction = 1,
+  scale_fill_manual(
+    values = c("#1f3a93", "#0c2461"),
     name = "Bloc"
   ) +
   scale_y_continuous(
-    labels = percent_format(accuracy = 1),
-    limits = c(0, x_max),
+    labels = percent_format(accuracy = 0),
+    limits = c(0, y_max),
     expand = expansion(mult = c(0, 0.05))
   ) +
   labs(
-    title = "Part des élèves en difficultés (< 12/20) par voie d'entrée (1A)",
-    subtitle = "Dégradé de bleu : du plus ancien (clair) au plus récent (foncé)",
+    title = "Part des élèves ayant moins de 12 de moyenne en 1A par voie d'entrée",
     x = "Voie d'entrée",
-    y = NULL
+    y = "Part des élèves (%)"
   ) +
   theme_minimal() +
   theme(
-    plot.title = element_text(hjust = 0.5, face = "bold", size = 12),
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 14),
     plot.subtitle = element_text(hjust = 0.5, size = 9),
     legend.position = "top",
-    panel.grid.major.y = element_blank(),
+    panel.grid.major.x = element_blank(),
     panel.grid.minor = element_blank(),
-    axis.text.y = element_text(size = 9),
-    axis.text.x = element_blank(),   # enlève les valeurs de l'axe horizontal
-    axis.ticks.x = element_blank()   # enlève les graduations
+    axis.text.x = element_text(size = 9, angle = 45, hjust = 1),
+    axis.text.y = element_text(size = 9)
   )
+
+```
+
+# part des élèves redoublant par voie d'entrée
+
+```{r}
+
+data_plot <- bdd_1A_2A_unique %>%
+  filter(annee_ecole == "1A",
+         !spe_entree %in% c("AST-1A","ERASMUS","INSEE")) %>%   # ✅ on se limite à la 1A
+  group_by(bloc_an, spe_entree) %>%
+  summarise(
+    part_redoublants = mean(redoublement, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+ggplot(data_plot, aes(x = spe_entree, y = part_redoublants, fill = bloc_an)) +
+  geom_col(position = "dodge") +
+  labs(
+    title = "Part des élèves ingénieurs redoublants la 1A",
+    x = "Spécialité d'entrée",
+    y = "Part de redoublants"
+  ) +
+  theme_minimal()
+
+```
+
+```{r}
+
+
+data_plot <- bdd_1A_2A_unique %>%
+  filter(annee_ecole == "2A",
+         !spe_entree %in% c("AST-1A","ERASMUS","INSEE")) %>%   # ✅ on se limite à la 1A
+  group_by(bloc_an, spe_entree) %>%
+  summarise(
+    part_redoublants = mean(redoublement, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+ggplot(data_plot, aes(x = spe_entree, y = part_redoublants, fill = bloc_an)) +
+  geom_col(position = "dodge") +
+  labs(
+    title = "Part des élèves ingénieurs redoublants la 1A",
+    x = "Spécialité d'entrée",
+    y = "Part de redoublants"
+  ) +
+  theme_minimal()
 
 ```
 
 ```{r}
 
 data_plot <- bdd_bloc_1A_2A %>%
-  select(bloc_an, annee_ecole, contains("prop12_g")) %>%
-  filter(annee_ecole == "2A") %>%
+  select(bloc_an, annee_ecole, contains("prop12_g"), -c("prop12_g_AST-1A","prop12_g_ERASMUS")) %>%
+  filter(annee_ecole == "2A", bloc_an == "2023-2025") %>%
   arrange(desc(bloc_an)) %>%
   pivot_longer(
     cols = contains("prop12_g"),
@@ -1276,57 +1635,76 @@ data_plot <- bdd_bloc_1A_2A %>%
     filiere = sub("prop12_g_", "", filiere),
     filiere = gsub("_", " ", filiere),
     filiere = tools::toTitleCase(filiere)
-  )
+  ) %>%
+  group_by(bloc_an, filiere) %>%  # Ajout du groupement
+  summarise(pourcentage = mean(pourcentage, na.rm = TRUE), .groups = "drop")  # Calcul de la moyenne
 
 # Limite max pour l'axe des pourcentages
 x_max <- max(data_plot$pourcentage, na.rm = TRUE) * 1.15
 
 # Graphique horizontal
+# Préparation des données : suppression des NA
+data_plot_clean <- data_plot %>%
+  filter(!is.na(pourcentage))
+
+# Calcul automatique de la limite supérieure (ajoute 5% de marge)
+y_max <- max(data_plot_clean$pourcentage, na.rm = TRUE) * 1.05
+
+# Préparation des données : suppression des NA
+data_plot_clean <- data_plot %>%
+  filter(!is.na(pourcentage))
+
+# Calcul automatique de la limite supérieure (ajoute 5% de marge)
+y_max <- max(data_plot_clean$pourcentage, na.rm = TRUE) * 1.05
+
+# Préparation des données : suppression des NA
+data_plot_clean <- data_plot %>%
+  filter(!is.na(pourcentage))
+
+# Calcul automatique de la limite supérieure (ajoute 5% de marge)
+y_max <- max(data_plot_clean$pourcentage, na.rm = TRUE) * 1.05
+
 ggplot(
-  data_plot,
+  data_plot_clean,
   aes(
-    x = reorder(filiere, pourcentage),
+    x = reorder(filiere, -pourcentage),  # Tri décroissant
     y = pourcentage,
     fill = factor(bloc_an)
   )
 ) +
   geom_col(position = position_dodge(width = 0.75), width = 0.7) +
   geom_text(
-    aes(label = paste0(round(pourcentage, 1), "%")),
+    aes(label = paste0(round(pourcentage, 0), "%")),
     position = position_dodge(width = 0.75),
-    hjust = -0.1,
-    size = 2.2,
+    vjust = -0.5,
+    size = 3.5,
     color = "black"
   ) +
-  coord_flip() +
-  scale_fill_brewer(
-    type = "seq",
-    palette = "Blues",
-    direction = 1,
+  scale_fill_manual(
+    values = c("#1f3a93", "#0c2461"),
     name = "Bloc"
   ) +
   scale_y_continuous(
-    labels = percent_format(accuracy = 1),
-    limits = c(0, x_max),
+    labels = percent_format(accuracy = 0),
+    limits = c(0, y_max),
     expand = expansion(mult = c(0, 0.05))
   ) +
   labs(
-    title = "Part des élèves en difficultés (< 12/20) par voie d'entrée (1A)",
-    subtitle = "Dégradé de bleu : du plus ancien (clair) au plus récent (foncé)",
+    title = "Part des élèves ayant moins de 12 de moyenne en 2A par voie d'entrée",
     x = "Voie d'entrée",
-    y = NULL
+    y = "Part des élèves (%)"
   ) +
   theme_minimal() +
   theme(
-    plot.title = element_text(hjust = 0.5, face = "bold", size = 12),
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 14),
     plot.subtitle = element_text(hjust = 0.5, size = 9),
     legend.position = "top",
-    panel.grid.major.y = element_blank(),
+    panel.grid.major.x = element_blank(),
     panel.grid.minor = element_blank(),
-    axis.text.y = element_text(size = 9),
-    axis.text.x = element_blank(),   # enlève les valeurs de l'axe horizontal
-    axis.ticks.x = element_blank()   # enlève les graduations
+    axis.text.x = element_text(size = 9, angle = 45, hjust = 1),
+    axis.text.y = element_text(size = 9)
   )
+
 
 ```
 
@@ -1343,14 +1721,14 @@ bdd_1A <- bdd[bdd$annee_ecole %in% c("1A"),]
 bdd_1A_unique <- bdd_1A[!duplicated(cbind(bdd_1A$id_etudiant,bdd_1A$annee)),]
 
 bdd_plot <- bdd_1A_unique %>% 
-  filter(!is.na(ccc_ran_com)) %>% 
-  group_by(annee) %>% 
-  mutate(max_annee = max(ccc_ran_com)) %>%   # max calculé par année
-  group_by(annee, statut_etudiant) %>% 
+  filter(!is.na(rang_cc_maths)) %>% 
+  group_by(bloc_an) %>% 
+  mutate(max_annee = max(rang_cc_maths)) %>%   # max calculé par année
+  group_by(bloc_an, statut_etudiant) %>% 
   summarise(
     nb_math = n(),
-    rang_moy_math = round(100 * mean(ccc_ran_com / max_annee), 1),
-    rang_med_math = round(100 * median(ccc_ran_com / max_annee), 1),
+    rang_moy_math = round(100 * mean(rang_cc_maths / max_annee), 1),
+    rang_med_math = round(100 * median(rang_cc_maths / max_annee), 1),
     .groups = "drop"
   )
 
@@ -1364,12 +1742,95 @@ bdd_plot %>%
 
 ```{r}
 
-ggplot(bdd_plot, aes(x = annee, y = rang_moy_math,
+ggplot(bdd_plot, aes(x = bloc_an, y = rang_moy_math,
                         color = statut_etudiant, group = statut_etudiant)) +
   geom_line(size = 1) +
   geom_point(size = 2) +
   labs(
-    title = "Évolution du rang moyen au concours d'entrée spé maths par statut étudiant",
+    title = "Rang moyen (%) au concours maths par statut étudiant",
+    x = "Année",
+    y = "Rang moyen (%)",
+    color = "Statut étudiant"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    plot.title = element_text(face = "bold"),
+    legend.position = "bottom"
+  )
+
+```
+
+```{r}
+
+bdd_box <- bdd_1A_unique %>%
+  filter(!is.na(rang_cc_maths)) %>%
+  group_by(bloc_an) %>%
+  mutate(rang_std = 100 * rang_cc_maths / max(rang_cc_maths)) %>%  # standardisation par année
+  ungroup() %>%
+  mutate(bloc_an = factor(bloc_an))
+
+ggplot(bdd_box,
+       aes(x = bloc_an, y = rang_std, fill = statut_etudiant)) +
+  geom_boxplot(width = 0.7, alpha = 0.6, outlier.shape = NA, 
+               position = position_dodge(width = 0.8)) +
+  geom_jitter(aes(color = statut_etudiant),
+              alpha = 0.35, size = 1,
+              position = position_jitterdodge(jitter.width = 0.15, dodge.width = 0.8)) +
+  labs(
+    title = "Dispersion du rang standardisé par année et statut",
+    x = "Année",
+    y = "Rang standardisé (%)",
+    fill = "Statut étudiant",
+    color = "Statut étudiant"
+  ) +
+  scale_y_continuous(limits = c(0, 100)) +
+  theme_minimal(base_size = 14) +
+  theme(
+    plot.title = element_text(face = "bold"),
+    legend.position = "bottom"
+  )
+
+
+```
+
+
+### Zoom sur les PC/PSI
+
+```{r}
+
+bdd_1A <- bdd[bdd$annee_ecole %in% c("1A"),]
+
+bdd_1A_unique <- bdd_1A[!duplicated(cbind(bdd_1A$id_etudiant,bdd_1A$annee)),]
+
+bdd_plot <- bdd_1A_unique %>% 
+  filter(!is.na(rang_cc_maths),
+         spe_entree != "D2") %>% 
+  group_by(bloc_an) %>% 
+  mutate(max_annee = max(rang_cc_maths)) %>%   # max calculé par année
+  group_by(bloc_an, spe_entree) %>% 
+  summarise(
+    nb_math = n(),
+    rang_moy_math = round(100 * mean(rang_cc_maths / max_annee), 1),
+    rang_med_math = round(100 * median(rang_cc_maths / max_annee), 1),
+    .groups = "drop"
+  )
+
+bdd_plot %>%
+  kable(format = "html", caption = "Rangs d'intégration moyen et médian standardisés") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = FALSE, position = "center")
+
+```
+
+
+```{r}
+
+ggplot(bdd_plot, aes(x = bloc_an, y = rang_moy_math,
+                        color = spe_entree, group = spe_entree)) +
+  geom_line(size = 1) +
+  geom_point(size = 2) +
+  labs(
+    title = "Évolution du rang moyen au concours d'entrée maths par statut étudiant",
     x = "Année",
     y = "Rang moyen (%)",
     color = "Statut étudiant"
@@ -1385,28 +1846,30 @@ ggplot(bdd_plot, aes(x = annee, y = rang_moy_math,
 ```{r}
 
 bdd_box <- bdd_1A_unique %>%
-  filter(!is.na(ccc_ran_com)) %>%
-  group_by(annee) %>%
-  mutate(rang_std = 100 * ccc_ran_com / max(ccc_ran_com)) %>%  # standardisation par année
+  filter(!is.na(rang_cc_maths),
+                spe_entree != "D2",
+                bloc_an == "2023-2025") %>%
+  group_by(bloc_an) %>%
+  mutate(rang_std = 100 * rang_cc_maths / max(rang_cc_maths)) %>%  # standardisation par année
   ungroup() %>%
-  mutate(annee = factor(annee))
+  mutate(bloc_an = factor(bloc_an))
 
 ggplot(bdd_box,
-       aes(x = annee, y = rang_std, fill = statut_etudiant)) +
+       aes(x = bloc_an, y = rang_std, fill = spe_entree)) +
   geom_boxplot(width = 0.7, alpha = 0.6, outlier.shape = NA, 
                position = position_dodge(width = 0.8)) +
-  geom_jitter(aes(color = statut_etudiant),
+  geom_jitter(aes(color = spe_entree),
               alpha = 0.35, size = 1,
               position = position_jitterdodge(jitter.width = 0.15, dodge.width = 0.8)) +
   labs(
-    title = "Dispersion du rang standardisé par année et statut étudiant",
+    title = "Dispersion du rang standardisé d'admission",
     x = "Année",
     y = "Rang standardisé (%)",
-    fill = "Statut étudiant",
-    color = "Statut étudiant"
+    fill = "Spé entrée",
+    color = "Spé entrée"
   ) +
   scale_y_continuous(limits = c(0, 100)) +
-  theme_minimal(base_size = 10) +
+  theme_minimal(base_size = 14) +
   theme(
     plot.title = element_text(face = "bold"),
     legend.position = "bottom"
@@ -1414,6 +1877,207 @@ ggplot(bdd_box,
 
 
 ```
+```{r}
+bdd_box <- bdd_1A_unique %>%
+  filter(!is.na(rang_cc_maths),
+                spe_entree != "D2",
+                bloc_an == "2023-2025") %>%
+  group_by(bloc_an) %>%
+  mutate(rang_std = 100 * rang_cc_maths / max(rang_cc_maths)) %>%  # standardisation par année
+  ungroup() %>%
+  mutate(bloc_an = factor(bloc_an))
+
+ggplot(bdd_box,
+       aes(x = bloc_an, y = moyenne_generale, fill = spe_entree)) +
+  geom_boxplot(width = 0.7, alpha = 0.6, outlier.shape = NA, 
+               position = position_dodge(width = 0.8)) +
+  geom_jitter(aes(color = spe_entree),
+              alpha = 0.35, size = 1,
+              position = position_jitterdodge(jitter.width = 0.15, dodge.width = 0.8)) +
+  labs(
+    title = "Moyenne en 1A des étudiants entrés par la voie mathématiques",
+    x = "Année",
+    y = "Moyenne générale",
+    fill = "Spé entrée",
+    color = "Spé entrée"
+  ) +
+  scale_y_continuous(limits = c(5, 18)) +
+  theme_minimal(base_size = 13) +
+  theme(
+    plot.title = element_text(face = "bold"),
+    legend.position = "bottom"
+  )
+
+
+```
+
+
+### 2.2. Évolution des écarts de rang d'intégration entre attachés et ingénieurs (filière BL)
+
+Afin de comparer les rangs année par année et par filière, un rang standardisé est calculé pour chaque année. Il correspond à son rang au concours commun divisé par le rang maximum d'intégration à l'Ensai au concours commun.
+
+```{r}
+
+bdd_1A <- bdd[bdd$annee_ecole %in% c("1A"),]
+
+bdd_1A_unique <- bdd_1A[!duplicated(cbind(bdd_1A$id_etudiant,bdd_1A$annee)),]
+
+bdd_plot <- bdd_1A_unique %>% 
+  filter(!is.na(rang_cc_bl)) %>% 
+  group_by(bloc_an) %>% 
+  mutate(max_annee = max(rang_cc_bl)) %>%   # max calculé par année
+  group_by(bloc_an, statut_etudiant) %>% 
+  summarise(
+    nb_bl = n(),
+    rang_moy_bl = round(100 * mean(rang_cc_bl / max_annee), 1),
+    rang_med_bl = round(100 * median(rang_cc_bl / max_annee), 1),
+    .groups = "drop"
+  )
+
+bdd_plot %>%
+  kable(format = "html", caption = "Rangs d'intégration moyen et médian standardisés") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = FALSE, position = "center")
+
+```
+
+
+```{r}
+
+ggplot(bdd_plot, aes(x = bloc_an, y = rang_moy_bl,
+                        color = statut_etudiant, group = statut_etudiant)) +
+  geom_line(size = 1) +
+  geom_point(size = 2) +
+  labs(
+    title = "Rang moyen au concours d'entrée BL par statut",
+    x = "Année",
+    y = "Rang moyen (%)",
+    color = "Statut étudiant"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    plot.title = element_text(face = "bold"),
+    legend.position = "bottom"
+  )
+
+```
+
+```{r}
+
+bdd_box <- bdd_1A_unique %>%
+  filter(!is.na(rang_cc_bl)) %>%
+  group_by(bloc_an) %>%
+  mutate(rang_std = 100 * rang_cc_bl / max(rang_cc_bl)) %>%  # standardisation par année
+  ungroup() %>%
+  mutate(bloc_an = factor(bloc_an))
+
+ggplot(bdd_box,
+       aes(x = bloc_an, y = rang_std, fill = statut_etudiant)) +
+  geom_boxplot(width = 0.7, alpha = 0.6, outlier.shape = NA, 
+               position = position_dodge(width = 0.8)) +
+  geom_jitter(aes(color = statut_etudiant),
+              alpha = 0.35, size = 1,
+              position = position_jitterdodge(jitter.width = 0.15, dodge.width = 0.8)) +
+  labs(
+    title = "Dispersion du rang standardisé par année et statut",
+    x = "Année",
+    y = "Rang standardisé (%)",
+    fill = "Statut étudiant",
+    color = "Statut étudiant"
+  ) +
+  scale_y_continuous(limits = c(0, 100)) +
+  theme_minimal(base_size = 14) +
+  theme(
+    plot.title = element_text(face = "bold"),
+    legend.position = "bottom"
+  )
+
+
+```
+
+### 2.3. Évolution des écarts de rang d'intégration entre attachés et ingénieurs (filière d2)
+
+Afin de comparer les rangs année par année et par filière, un rang standardisé est calculé pour chaque année. Il correspond à son rang au concours commun divisé par le rang maximum d'intégration à l'Ensai au concours commun.
+
+```{r}
+
+bdd_1A <- bdd[bdd$annee_ecole %in% c("1A"),]
+
+bdd_1A_unique <- bdd_1A[!duplicated(cbind(bdd_1A$id_etudiant,bdd_1A$annee)),]
+
+bdd_plot <- bdd_1A_unique %>% 
+  filter(!is.na(rang_cc_d2)) %>% 
+  group_by(bloc_an) %>% 
+  mutate(max_annee = max(rang_cc_d2)) %>%   # max calculé par année
+  group_by(bloc_an, statut_etudiant) %>% 
+  summarise(
+    nb_d2 = n(),
+    rang_moy_d2 = round(100 * mean(rang_cc_d2 / max_annee), 1),
+    rang_med_d2 = round(100 * median(rang_cc_d2 / max_annee), 1),
+    .groups = "drop"
+  )
+
+bdd_plot %>%
+  kable(format = "html", caption = "Rangs d'intégration moyen et médian standardisés") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = FALSE, position = "center")
+
+```
+
+
+```{r}
+
+ggplot(bdd_plot, aes(x = bloc_an, y = rang_moy_d2,
+                        color = statut_etudiant, group = statut_etudiant)) +
+  geom_line(size = 1) +
+  geom_point(size = 2) +
+  labs(
+    title = "Rang moyen au concours d'entrée D2 par statut",
+    x = "Année",
+    y = "Rang moyen (%)",
+    color = "Statut étudiant"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    plot.title = element_text(face = "bold"),
+    legend.position = "bottom"
+  )
+
+```
+
+```{r}
+
+bdd_box <- bdd_1A_unique %>%
+  filter(!is.na(rang_cc_d2)) %>%
+  group_by(bloc_an) %>%
+  mutate(rang_std = 100 * rang_cc_d2 / max(rang_cc_d2)) %>%  # standardisation par année
+  ungroup() %>%
+  mutate(bloc_an = factor(bloc_an))
+
+ggplot(bdd_box,
+       aes(x = bloc_an, y = rang_std, fill = statut_etudiant)) +
+  geom_boxplot(width = 0.7, alpha = 0.6, outlier.shape = NA, 
+               position = position_dodge(width = 0.8)) +
+  geom_jitter(aes(color = statut_etudiant),
+              alpha = 0.35, size = 1,
+              position = position_jitterdodge(jitter.width = 0.15, dodge.width = 0.8)) +
+  labs(
+    title = "Dispersion du rang standardisé par année et statut",
+    x = "Année",
+    y = "Rang standardisé (%)",
+    fill = "Statut étudiant",
+    color = "Statut étudiant"
+  ) +
+  scale_y_continuous(limits = c(0, 100)) +
+  theme_minimal(base_size = 12) +
+  theme(
+    plot.title = element_text(face = "bold"),
+    legend.position = "bottom"
+  )
+
+
+```
+
 
 ## 3.2. Rang d'intégration et redoublement
 
@@ -1584,6 +2248,11 @@ pred <- predict(mod_logit, type = "response")
 roc_obj <- roc(bdd_math$redoublement, pred)
 auc(roc_obj)   # entre 0.5 (hasard) et 1 (parfait)
 ```
+
+
+
+
+
 # 4. Les matières mathématiques et la filière d'origine
 
 ## 4.2. En statique
@@ -1597,8 +2266,8 @@ bdd_spécial_mat <- bdd_1A_2A_unique %>%
 
 ggplot(bdd_spécial_mat, aes(x = spe_entree, y = MSS1, fill = spe_entree)) +
   geom_boxplot() +
-  labs(title = "Réussite en mathématiques du semestre 1 selon la filière d'origine",
-       x = "Filière d'origine",
+  labs(title = "Réussite en mathématiques du semestre 1 selon la voie d'entrée",
+       x = "Voie d'entrée",
        y = "Note en mathématiques") +
   theme_minimal()
 
@@ -1615,7 +2284,11 @@ TukeyHSD(anova_filiere)
 bdd_spécial_mat_periode <- bdd_1A_2A_unique %>%
   filter(
     !is.na(MSS1),
-    annee_ecole == "1A"
+    annee_ecole == "1A",
+    spe_entree != "AST-1A",
+    spe_entree != "ERASMUS",
+    spe_entree != "PC/PSI",
+     spe_entree != "MPI"
   ) %>%
   mutate(
     spe_entree = as.factor(spe_entree),
@@ -1629,9 +2302,9 @@ ggplot(bdd_spécial_mat_periode, aes(x = spe_entree, y = MSS1, fill = bloc_an)) 
     direction = 1
   ) +
   labs(
-    title = "Réussite en matières statistiques au S1 en 1A selon la filière d'origine en évolution",
-    x = "Filière d'origine",
-    y = "Note en mathématiques",
+    title = "Réussite en matières statistiques au S1 en 1A selon la voie d'entrée",
+    x = "Voie d'entrée",
+    y = "Moyenne",
     fill = "Bloc"
   ) +
   theme_minimal()

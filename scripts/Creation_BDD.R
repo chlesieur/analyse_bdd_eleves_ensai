@@ -126,7 +126,7 @@ integrants_BL_ing_2015_2025 <- map_dfr(
       rang_cc = as.numeric(rang_cc)
     )
 ) %>%
-  filter(!if_all(everything(), is.na))
+  filter(!if_all(c(rang, rang_cc), is.na))
 
 integrants_BL_2015_2025 <- bind_rows(integrants_BL_att_2015_2025,integrants_BL_ing_2015_2025) %>% 
   rename(rang_cc_bl = rang_cc) %>% 
@@ -236,7 +236,7 @@ bdd_x <- bdd %>%
   left_join(integrants_D2_2015_2025, by = "id")
 
 # Etudes des quelques cas non appariés
-non_appariees <- integrants_maths_2015_2025 %>%
+non_appariees_maths <- integrants_maths_2015_2025 %>%
   anti_join(bdd, by = "id") %>% 
   filter(!is.na(nom))
 
@@ -477,54 +477,213 @@ bdd_4 <- bdd_4 %>% arrange(desc(annee), voie_lib, nom) %>%
   select(-c("situation","X","rattrapage_max", "RES1", "RHS1", "RIS1", "RSS1",
             "RES2", "RHS2", "RIS2", "RSS2","redoublement"))
 
+####### Calcul des spe_entree ##############################
+bdd_5 <- bdd_4 %>%
+  mutate(spe_entree = case_when(
+    grepl("mpi|mp2i|math[\\s\\-]*phys[\\s\\-]*info", etab_origine_formation, ignore.case = TRUE) ~ "MPI",
+    grepl("pc|ps", etab_origine_formation, ignore.case = TRUE) ~ "PC/PSI",
+    grepl("mp", etab_origine_formation, ignore.case = TRUE) ~ "MP",
+    grepl("math", concours_origine, ignore.case = TRUE) ~ "MP",
+    TRUE ~ "MP"
+  ))
+
+# # recoder spe_entree pour BL et D2
+bdd_5$spe_entree <- ifelse(is.na(bdd_5$rang_cc_bl) == TRUE, bdd_5$spe_entree, "BL")
+bdd_5$spe_entree <- ifelse(is.na(bdd_5$rang_cc_d2) == TRUE, bdd_5$spe_entree, "D2")
+
+# recoder spe_entree pour Autres
+bdd_5 <- bdd_5 %>%
+  mutate(
+    spe_entree = case_when(
+      grepl("IUT STID", concours_origine, ignore.case = TRUE) ~ "BUT",
+      grepl("AST-1A", voie_entree, ignore.case = TRUE) ~ "AST-1A",
+      grepl("AST-2A", voie_entree, ignore.case = TRUE) ~ "AST-2A",
+      concours_origine == "Concours interne" ~ "INSEE",
+      concours_origine %in% c("Contractuel", "Erasmus") ~ "ERASMUS",
+      TRUE ~ spe_entree  
+    )
+  )
+
+table(bdd_5$spe_entree, useNA = "ifany")
+
+# Il s'agit de continuer d'affiner à partir de tous les cas possibles
+sort(table(bdd_5$etab_origine_formation), decreasing = TRUE)
+
+# Prépa étoile
+
+bdd_5 <- bdd_5 %>%
+  mutate(prepa_etoile = case_when(
+    grepl("\\*", etab_origine_formation, ignore.case = TRUE) ~ 1,
+    TRUE ~ 0
+  ))
+
+############## creation des blocs annuels ####################################
+bdd_5$bloc_an<- ifelse(bdd_5$annee %in% c(2015,2016,2017),
+                       "2015-2017",
+                       ifelse (bdd_5$annee %in% c(2018,2019,2020),
+                               "2018-2020",
+                               ifelse(bdd_5$annee %in% c(2021,2022,2023),
+                                      "2021-2023",
+                                      "2024-2025")))
+
+
 #########  Création des variables redoublement et exclusion_demission 
 ######### Elles  ne sont pas bien renseignées dans Pamlemousse ############
 
-niveaux <- c("1A","2A","3A")
-
-# Base : uniquement les années 1A/2A/3A
-base <- bdd_4 %>%
-  filter(annee_ecole %in% niveaux) %>%
-  mutate(
-    annee       = as.integer(annee),
-    annee_ecole = factor(annee_ecole, levels = niveaux)
-  ) %>%
-  distinct(id_etudiant, annee, annee_ecole, .keep_all = TRUE)
-
 # Indicateurs par étudiant
-indicateurs <- base %>%
+# indicateurs <- base %>%
+#   group_by(id_etudiant) %>%
+#   summarise(
+#     redoublement       = as.integer(any(id_commentaire_bulletin_ref == 4)),
+#     redoublement_annee = paste(sort(unique(annee_ecole[id_commentaire_bulletin_ref == 4])),
+#                                collapse = ", "),
+# 
+#     demission          = as.integer(any(id_commentaire_bulletin_ref == 3)),
+#     demission_annee    = paste(sort(unique(annee_ecole[id_commentaire_bulletin_ref == 3])),
+#                                collapse = ", "),
+# 
+#     exclusion          = as.integer(any(id_commentaire_bulletin_ref == 2)),
+#     exclusion_annee    = paste(sort(unique(annee_ecole[id_commentaire_bulletin_ref == 2])),
+#                                collapse = ", "),
+# 
+#     .groups = "drop"
+#   ) %>%
+#   mutate(
+#     redoublement_annee = na_if(redoublement_annee, ""),
+#     demission_annee    = na_if(demission_annee, ""),
+#     exclusion_annee    = na_if(exclusion_annee, "")
+#   )
+
+
+############################## On gère d'abord les 1A ###################################################
+
+#---------- Exclusion/demission
+
+bdd_6 <- bdd_5 %>% 
+  filter(!id_etudiant %in% c("11643","12316")) # Leur année d'admission est différente dans le doute, on enlèbe
+
+bdd_6 <- bdd_6 %>% 
+  filter(statut_etudiant %in% c("Ingénieur","Attaché"))
+
+bdd_6_unique <- unique(bdd_6 %>% 
+                   select(id_etudiant,statut_etudiant,annee,annee_ecole,spe_entree) %>% 
+                   filter(!(annee == 2015 & annee_ecole == "3A"),
+                          !(annee == 2025 & spe_entree == "AST-2A"),
+                          !(annee == 2025 & annee_ecole == "1A"))
+)
+
+id_dupli <- unique(bdd_6_unique$id_etudiant[duplicated(bdd_6_unique$id_etudiant)])
+liste_id <- unique(bdd_6_unique$id_etudiant)
+exclusion_demission_1A <- setdiff(liste_id,id_dupli)
+
+exclusion_demission_1A <- bdd_6_unique %>% 
+  filter(id_etudiant %in% exclusion_demission_1A,annee_ecole == "1A") %>% 
+  select(id_etudiant,annee) %>% 
+  rename("annee_exclusion_demission_1A" = annee)
+
+#---------- Redoublement
+
+bdd_6_unique <- unique(bdd_6 %>% 
+                    filter(annee_ecole == "1A") %>% 
+                    select(id_etudiant, annee))
+
+redoublement_1A <- bdd_6_unique$id_etudiant[duplicated(bdd_6_unique$id_etudiant)]
+
+redoublement_1A <- unique(bdd_6_unique %>% 
+                            filter(id_etudiant %in% redoublement_1A) %>% 
+                            group_by(id_etudiant) %>% 
+                            mutate(annee_redoublement_1A = min(annee)) %>% 
+                            ungroup() %>% 
+                            select(id_etudiant,annee_redoublement_1A)) 
+
+
+#---------- Ajout à la table
+
+bdd_6_unique <- unique(bdd_6 %>% 
+                   select(annee,id_etudiant,annee_ecole,statut_etudiant, bloc_an, spe_entree))
+
+
+bdd_6_unique <- bdd_6_unique %>% 
+  left_join(redoublement_1A %>% mutate(annee = annee_redoublement_1A, redoublement_flag = 1),
+            by = c("id_etudiant","annee")) %>% 
+  mutate(redoublement_1A = coalesce(redoublement_flag,0)) %>% 
+  select(-redoublement_flag)
+
+bdd_6_unique <- bdd_6_unique %>% 
+  left_join(exclusion_demission_1A %>% mutate(annee = annee_exclusion_demission_1A, exclusion_flag = 1),
+            by = c("id_etudiant","annee")) %>% 
+  mutate(exclusion_demission_1A = coalesce(exclusion_flag,0)) %>% 
+  select(-exclusion_flag)
+
+bdd_6_echec <- bdd_6_unique %>%
+  mutate(echec_1A = redoublement_1A + exclusion_demission_1A,
+         annee_echec_1A = ifelse(!is.na(annee_redoublement_1A), annee_redoublement_1A, annee_exclusion_demission_1A))
+
+bdd_6_echec_unique <- bdd_6_echec %>%
   group_by(id_etudiant) %>%
   summarise(
-    redoublement       = as.integer(any(id_commentaire_bulletin_ref == 4)),
-    redoublement_annee = paste(sort(unique(annee_ecole[id_commentaire_bulletin_ref == 4])),
-                               collapse = ", "),
-    
-    demission          = as.integer(any(id_commentaire_bulletin_ref == 3)),
-    demission_annee    = paste(sort(unique(annee_ecole[id_commentaire_bulletin_ref == 3])),
-                               collapse = ", "),
-    
-    exclusion          = as.integer(any(id_commentaire_bulletin_ref == 2)),
-    exclusion_annee    = paste(sort(unique(annee_ecole[id_commentaire_bulletin_ref == 2])),
-                               collapse = ", "),
-    
+    redoublement_1A = max(redoublement_1A, na.rm = TRUE),
+    annee_redoublement_1A = if (all(is.na(annee_redoublement_1A))) NA else min(annee_redoublement_1A, na.rm = TRUE),
+    exclusion_demission_1A = max(exclusion_demission_1A, na.rm = TRUE),
+    annee_exclusion_demission_1A = if (all(is.na(annee_exclusion_demission_1A))) NA else min(annee_exclusion_demission_1A, na.rm = TRUE),
+    echec_1A = max(echec_1A, na.rm = TRUE),
+    annee_echec_1A = if (all(is.na(annee_echec_1A))) NA else min(annee_echec_1A, na.rm = TRUE))
+  
+table(bdd_6_echec_unique$redoublement_1A)
+table(bdd_6_echec_unique$exclusion_demission_1A)
+table(bdd_6_echec_unique$echec_1A)
+
+##### Fusion propre id_etudiant et annee 
+
+bdd_7 <- bdd_5 %>% 
+  left_join(
+    bdd_6_echec_unique %>% 
+      select(id_etudiant, annee = annee_echec_1A) %>% 
+      mutate(echec_1A = 1),
+    by = c("id_etudiant", "annee")
+  ) %>% 
+  mutate(echec_1A = coalesce(echec_1A, 0))
+
+data_plot <- bdd_7 %>% 
+  filter(annee != 2025,
+         annee_ecole == "1A",
+         statut_etudiant != "Autres") %>% 
+  group_by(annee, statut_etudiant) %>% 
+  summarise(
+    taux_echec_1A = mean(echec_1A) * 100,
     .groups = "drop"
-  ) %>%
-  mutate(
-    redoublement_annee = na_if(redoublement_annee, ""),
-    demission_annee    = na_if(demission_annee, ""),
-    exclusion_annee    = na_if(exclusion_annee, "")
   )
 
-# Résultat final : une ligne par étudiant
-base_final <- base %>%
-  distinct(id_etudiant) %>%
-  left_join(indicateurs, by = "id_etudiant")
+# Graphiques
 
-table(base_final$redoublement)
-table(base_final$demission)
-table(base_final$exclusion)
-
-bdd_7 <- left_join(bdd_4, base_final, by = "id_etudiant")
+# data_plot %>% 
+#   ggplot(aes(x=annee,y=taux_echec_1A,color=statut_etudiant,group=statut_etudiant)) +
+#   geom_line(linewidth = 1.2) +
+#   geom_point(size = 3) +
+#   labs(
+#     title = "Taux de redoublement/exclusion entre 2015 et 2025",
+#     x = "Année",
+#     y = "Taux",
+#     color = "Ingénieur/Attaché"
+#   ) 
+# 
+# bdd_5_enrichie %>% 
+#   filter(annee != 2025,
+#          statut_etudiant == "Ingénieur",
+#          annee_ecole == "1A",
+#          spe_entree != "AST-1A") %>% 
+#   group_by(bloc_an,spe_entree) %>% 
+#   summarise(taux_echec_1A = mean(echec_1A)*100, .groups = "drop") %>% 
+#   ggplot(aes(x=spe_entree,y=taux_echec_1A,fill = spe_entree)) +
+#   geom_col() +
+#   facet_wrap(~ bloc_an) +
+#   labs(
+#     title = "Échec en 1A (redoublement + exclusion/démission, logique cohorte)",
+#     x = "Spécialité d'entrée",
+#     y = "Part"
+#   ) +
+#   theme_minimal() +
+#   theme(legend.position = "none")
 
 # ## Anonymisation
 # 
@@ -568,70 +727,7 @@ bdd_7 <- left_join(bdd_4, base_final, by = "id_etudiant")
 # Ajout de variables
 
 # recoder spe_entree pour maths
-bdd_7 <- bdd_7 %>%
-  mutate(spe_entree = case_when(
-    grepl("mpi|mp2i|math[\\s\\-]*phys[\\s\\-]*info", etab_origine_formation, ignore.case = TRUE) ~ "MPI",
-    grepl("pc|ps", etab_origine_formation, ignore.case = TRUE) ~ "PC/PSI",
-    grepl("mp", etab_origine_formation, ignore.case = TRUE) ~ "MP",
-    grepl("math", concours_origine, ignore.case = TRUE) ~ "MP",
-    TRUE ~ "MP"
-  ))
 
-# recoder spe_entree pour ECO
-bdd_7$spe_entree <- ifelse(bdd_7$concours_origine =="Concours externe : spécialité 'économie et sciences sociales'",
-                           "BL", 
-                           ifelse(bdd_7$concours_origine =="concours externe : spécialité 'économie et sciences sociales'",
-                                  "BL",
-                                  ifelse (bdd_7$concours_origine == "Concours externe : spécialité 'économie et gestion'",
-                                          "D2",
-                                          bdd_7$spe_entree)))
-table(bdd_7$concours_origine)
-
-# recoder spe_entree pour Autres
-bdd_7 <- bdd_7 %>%
-  mutate(
-    spe_entree = case_when(
-      grepl("IUT STID", concours_origine, ignore.case = TRUE) ~ "BUT",
-      grepl("AST-1A", voie_entree, ignore.case = TRUE) ~ "AST-1A",
-      grepl("AST-2A", voie_entree, ignore.case = TRUE) ~ "AST-2A",
-      concours_origine == "Concours interne" ~ "INSEE",
-      concours_origine %in% c("Contractuel", "Erasmus") ~ "ERASMUS",
-      TRUE ~ spe_entree  
-    )
-  )
-
-table(bdd_7$spe_entree, useNA = "ifany")
-
-# Il s'agit de continuer d'affiner à partir de tous les cas possibles
-sort(table(bdd_7$etab_origine_formation), decreasing = TRUE)
-
-# Prépa étoile
-
-bdd_7 <- bdd_7 %>%
-  mutate(prepa_etoile = case_when(
-    grepl("\\*", etab_origine_formation, ignore.case = TRUE) ~ 1,
-    TRUE ~ 0
-  ))
-
-# creation des blocs annuels
-bdd_7$bloc_an<- ifelse(bdd_7$annee %in% c(2015,2016,2017),
-                              "2015-2017",
-                              ifelse (bdd_7$annee %in% c(2018,2019,2020),
-                                      "2018-2020",
-                                      ifelse(bdd_7$annee %in% c(2021,2022,2023),
-                                             "2021-2023",
-                                             "2024-2025")))
-
-# Correction de la variable att_ing
-
-bdd_8 <- bdd_7 %>% 
-  select(annee, voie_lib, nom, prenom, statut_etudiant, att_ing)
-
-bdd_9 <- bdd_8[substr(tolower(bdd_8$statut_etudiant), 1, 3) != substr(tolower(bdd_8$att_ing), 1, 3), ] %>% 
-  distinct
-
-# Export en xlsx
-write_xlsx(bdd_9, path = "att_ing.xlsx")
 
 # Export en csv
 write.csv2(bdd_7, "data/bdd_2015_2025.csv", row.names = FALSE)
@@ -677,7 +773,7 @@ bdd_7$moyenne_ue <- structure(bdd_7$moyenne_ue, label = "Note moyenne de l'étud
 bdd_7$voie_lib <- structure(bdd_7$voie_lib, label = "Libellé long de la voie d'appartenance")
 bdd_7$rang_matiere <- structure(bdd_7$voie_lib, label = "Rang dans la matière")
 bdd_7$rang_max_matiere <- structure(bdd_7$voie_lib, label = "Rang max dans la matière")
-bdd_7$moyenne_generale <- structure(bdd_7$voie_lib, label = "Moyenne générale sur l'année")
+bdd_7$moyenne_generale <- structure(bdd_7$moyenne_generale, label = "Moyenne générale sur l'année")
 bdd_7$total_coeff <- structure(bdd_7$voie_lib, label = "Coefficient de la matière")
 bdd_7$total_ects <- structure(bdd_7$total_ects, label = "Crédits ECTS de la matière")
 bdd_7$filiere_3Abis <- structure(bdd_7$filiere_3Abis, label = "Filière en 3ème année à l'Ensai revue par Stéphane")
