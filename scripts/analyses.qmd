@@ -3,8 +3,12 @@ title: "Analyses sur la période 2015-2025"
 format: html
 ---
 
+## 0. Importation des données et mise en forme pour l'analyse
+
+### 0.1 Setup 
 ```{r setup, include=FALSE}
 library(dplyr)
+library(stringr)
 library(ggplot2)
 library(leaflet)
 library(rmarkdown)
@@ -18,57 +22,130 @@ library(here)
 library(DT)
 library(kableExtra)
 library(pROC)
+library(FactoMineR)
+library(factoextra)
 ```
 
+### 0.2. Import et création des variables utiles
 ```{r}
-bdd <- read_parquet(here("data","bdd_2015_2025.parquet")) %>% 
-  filter(annee_ecole != "Autres")
+# Import de la base complète
+bdd <- read_parquet(here("data","bdd_2015_2025.parquet")) %>%
+  filter(annee_ecole != "Autres") %>% 
+  mutate(
+    note_stat = rowMeans(cbind(MSS1, MSS2), na.rm = TRUE),
+    note_info = rowMeans(cbind(MIS1, MIS2), na.rm = TRUE),
+    note_eco  = rowMeans(cbind(MES1, MES2), na.rm = TRUE),
+    note_hum  = rowMeans(cbind(MHS1, MHS2), na.rm = TRUE)
+  ) %>% 
+  ungroup()
 
+# On propage les valeurs de filiere 1A, 2A et 3A
+bdd <- bdd %>%
+  group_by(id_etudiant) %>%
+  mutate(
+    filiere_1A = first(na.omit(filiere_1A), default = NA_character_),
+    filiere_2A = first(na.omit(filiere_2A), default = NA_character_),
+    filiere_3A = first(na.omit(filiere_3A), default = NA_character_)
+  ) %>%
+  ungroup()
+
+# Calcul de l variable bloc_an pour les petits effectifs et faciliter l'analyse
 bdd$bloc_an<- ifelse(bdd$annee %in% c(2015,2016,2017),"2015-2017",ifelse (bdd$annee %in% c(2018,2019,2020),"2018-2020",ifelse(bdd$annee %in% c(2021,2022),"2021-2022","2023-2025")))
 
-# travaux sur 1A et 2A
-bdd_1A_2A <- bdd[bdd$annee_ecole %in% c("1A","2A"),]
+# Reclacul d'une moyenne personnelle excluant les projets de groupe (pour essayer de mieux cerner le niveau individuel dans les régressions)
+bdd_hors_projet <- bdd %>% 
+  filter(!str_detect(matiere, regex("projet", ignore_case = TRUE)))
 
-#  conserver une ligne par eleve et par année
-bdd_1A_2A_unique <- bdd_1A_2A[!duplicated(cbind(bdd_1A_2A$id_etudiant,bdd_1A_2A$annee)),]
+moyenne_hors_projet <- bdd_hors_projet %>%
+  summarise(moyenne_hors_projet = mean(moyenne_matiere),
+            .by = c("id_etudiant", "annee")) %>%
+  select(id_etudiant, moyenne_hors_projet, annee)
 
-# travaux sur 1A et 2A
-bdd_1A_2A <- bdd[bdd$annee_ecole %in% c("1A","2A"),]
 
-#  conserver une ligne par eleve et par année
-bdd_1A_2A_unique <- bdd_1A_2A[!duplicated(cbind(bdd_1A_2A$id_etudiant,bdd_1A_2A$annee)),]
+# Création de la base bdd_unique 
+# On conserve une ligne par eleve et par année
+bdd_unique <- as.data.frame(bdd) %>%
+  distinct(id_etudiant, annee, .keep_all = TRUE) %>%
+  left_join(moyenne_hors_projet, by = c("id_etudiant","annee")) %>%
+  distinct(id_etudiant, annee, .keep_all = TRUE) %>%
+  mutate(
+    moyenne_cc = coalesce(rang_cc_maths, rang_cc_bl, rang_cc_d2)
+  ) %>%
+  group_by(annee, annee_ecole) %>%
+  mutate(
+    rang = 100*percent_rank(moyenne_generale),
+    rang_hors_projet = 100*percent_rank(moyenne_hors_projet),
+    rang_cc = 100*percent_rank(moyenne_cc)
+  ) %>%
+  ungroup() %>%
+  # --- MODIFICATION : Extraire le premier rang_cc par étudiant ---
+  group_by(id_etudiant) %>%
+  mutate(
+    premier_rang_cc = first(rang_cc[!is.na(rang_cc)]),  # Prend le premier rang_cc non NA
+    rang_cc = premier_rang_cc  # Remplace rang_cc par la valeur du premier rang_cc
+  ) %>%
+  ungroup() %>%
+  # --- Suite du code inchangée ---
+  mutate(annee_ecole_copie = annee_ecole,
+         annee_copie = annee) %>%
+  pivot_wider(
+    names_from = annee_ecole,
+    values_from = c(rang, rang_hors_projet, note_stat, note_info, note_eco, note_hum),
+    names_glue = "{.value}_{annee_ecole}"
+  ) %>%
+  rename(annee_ecole = annee_ecole_copie) %>%
+  arrange(id_etudiant, annee) %>%
+  group_by(id_etudiant) %>%
+  fill(starts_with("rang_"), .direction = "downup") %>%
+  fill(starts_with("note_"), .direction = "downup") %>%
+  ungroup() %>%
+  mutate(evol_1A_2A = rang_2A - rang_1A,
+         evol_stat_1A_2A = note_stat_2A - note_stat_1A,
+         evol_info_1A_2A = note_info_2A - note_info_1A,
+         evol_eco_1A_2A = note_eco_2A - note_eco_1A,
+         evol_hum_1A_2A = note_hum_2A - note_hum_1A)
 
-# ajout du max et du rang standardisé
-bdd_1A_2A_unique <- bdd_1A_2A_unique %>%
-  # 2. Calculer le meilleur rang (comme avant)
+
+
+# on crée des variables catégorielles pour les rangs ainsi qu'un score RIDIT (à revoir)
+bdd_unique <- bdd_unique %>%
   group_by(annee, spe_entree) %>%
   mutate(
-    # On prend le meilleur rang parmi les colonnes disponibles
-    meilleur_rang = pmin(
-      rang_cc_maths,
-      rang_cc_bl,
-      rang_cc_d2,
-      na.rm = TRUE
+  ) %>%
+  ungroup() %>%
+  mutate(
+    Score_IDIT = ifelse(is.na(rang_cc), NA_real_, rang_cc),
+    profil_cc = case_when(
+      is.na(rang_cc) ~ NA_character_,
+      percent_rank(rang_cc) * 100 <= 25 ~ "Très bon",
+      percent_rank(rang_cc) * 100 <= 50 ~ "Bon",
+      percent_rank(rang_cc) * 100 <= 75 ~ "Moyen",
+      TRUE ~ "Moins bon"
     ),
-    # Standardisation par année/filière
-    meilleur_rang_max = max(meilleur_rang, na.rm = TRUE),
-    meilleur_rang_standard = meilleur_rang / meilleur_rang_max,
-    percentile_rang = (1 - meilleur_rang_standard) * 100
-  ) %>%
-  ungroup() %>%
-  # 3. Intégrer la moyenne générale (si tu l'as)
-  group_by(annee, spe_entree) %>%
-  mutate(
-    percentile_moyenne = percent_rank(moyenne_generale) * 100
-  ) %>%
-  ungroup() %>%
-  # 4. Calculer le Score IDIT
-  mutate(
-    Score_IDIT = (percentile_rang * 1) + (percentile_moyenne * 0)
+    profil_1A = case_when(
+      is.na(rang_1A) ~ NA_character_,
+      percent_rank(rang_1A) * 100 <= 25 ~ "Très bon",
+      percent_rank(rang_1A) * 100 <= 50 ~ "Bon",
+      percent_rank(rang_1A) * 100 <= 75 ~ "Moyen",
+      TRUE ~ "Moins bon"
+    ),
+    profil_2A = case_when(
+      is.na(rang_2A) ~ NA_character_,
+      percent_rank(rang_2A) * 100 <= 25 ~ "Très bon",
+      percent_rank(rang_2A) * 100 <= 50 ~ "Bon",
+      percent_rank(rang_2A) * 100 <= 75 ~ "Moyen",
+      TRUE ~ "Moins bon"
+    ),
+    profil_3A = case_when(
+      is.na(rang_3A) ~ NA_character_,
+      percent_rank(rang_3A) * 100 <= 25 ~ "Très bon",
+      percent_rank(rang_3A) * 100 <= 50 ~ "Bon",
+      percent_rank(rang_3A) * 100 <= 75 ~ "Moyen",
+      TRUE ~ "Moins bon"
+    )
   )
 
-bdd_bloc_1A_2A <- bdd_1A_2A_unique %>%
-  filter(annee_ecole %in% c("1A","2A")) %>%
+bdd_moy <- bdd %>%
   group_by(bloc_an, annee_ecole, spe_entree) %>%
   summarise(
     nb       = n(),
@@ -97,137 +174,95 @@ bdd_bloc_1A_2A <- bdd_1A_2A_unique %>%
   ) %>%
   arrange(bloc_an, annee_ecole)
 
-# admis
-
-bdd_bloc_1A_2A_admis <- bdd_1A_2A_unique %>%
-  filter(annee_ecole == ("1A") | spe_entree == "AST-2A") %>%
-  group_by(bloc_an, spe_entree) %>%
-  summarise(
-    nb       = n(),
-    
-    # Moyennes
-    moy_g    = round(mean(moyenne_generale, na.rm = TRUE), 1),
-    moy_stat = round((mean(MSS1, na.rm = TRUE) + mean(MSS2, na.rm = TRUE)) / 2, 1),
-    moy_eco  = round((mean(MES1, na.rm = TRUE) + mean(MES2, na.rm = TRUE)) / 2, 1),
-    moy_info = round((mean(MIS1, na.rm = TRUE) + mean(MIS2, na.rm = TRUE)) / 2, 1),
-    moy_hum  = round((mean(MHS1, na.rm = TRUE) + mean(MHS2, na.rm = TRUE)) / 2, 1),
-    
-    # Proportions < 12 (en %)
-    prop12_g    = round(100 * mean(moyenne_generale < 12, na.rm = TRUE), 1),
-    prop12_stat = round(100 * mean((MSS1 + MSS2)/2 < 12, na.rm = TRUE), 1),
-    prop12_eco  = round(100 * mean((MES1 + MES2)/2 < 12, na.rm = TRUE), 1),
-    prop12_info = round(100 * mean((MIS1 + MIS2)/2 < 12, na.rm = TRUE), 1),
-    prop12_hum  = round(100 * mean((MHS1 + MHS2)/2 < 12, na.rm = TRUE), 1),
-    
-    .groups = "drop"
-  ) %>%
-  pivot_wider(
-    names_from  = spe_entree,
-    values_from = c(nb, moy_g, moy_stat, moy_eco, moy_info, moy_hum,
-                    prop12_g, prop12_stat, prop12_eco, prop12_info, prop12_hum),
-    values_fill = 0
-  ) %>%
-  arrange(bloc_an)
-
+# # Rang standardisé par année 
+# rang_1A <- as.data.frame(bdd_unique) %>%
+#   filter(annee_ecole == "1A") %>% 
+#   group_by(annee) %>%
+#   arrange(moyenne_generale, .by_group = TRUE) %>%
+#   mutate(
+#     rang = rank(desc(moyenne_generale), ties.method = "min"),
+#     N_annee = n(),
+#     rang_1A = 100 *(rang/N_annee)
+#   ) %>%
+#   ungroup() %>% 
+#   select(c(id_etudiant,annee,rang_1A))
+# 
+# rang_2A <- as.data.frame(bdd_unique) %>%
+#   filter(annee_ecole == "2A") %>% 
+#   group_by(annee) %>%
+#   arrange(moyenne_generale, .by_group = TRUE) %>%
+#   mutate(
+#     rang = rank(desc(moyenne_generale), ties.method = "min"),
+#     N_annee = n(),
+#     rang_2A = 100*(rang/N_annee)
+#   ) %>%
+#   ungroup() %>% 
+#   select(c(id_etudiant,annee,rang_2A))
+# 
+# rang_3A <- as.data.frame(bdd_unique) %>%
+#   filter(annee_ecole == "3A") %>% 
+#   group_by(annee) %>%
+#   arrange(moyenne_generale, .by_group = TRUE) %>%
+#   mutate(
+#     rang = rank(desc(moyenne_generale), ties.method = "min"),
+#     N_annee = n(),
+#     rang_3A = 100*(rang/N_annee)
+#   ) %>%
+#   ungroup() %>% 
+#   select(c(id_etudiant,annee,rang_3A))
+# 
+# # On fusionne
+# rang_1A_clean <- as.data.frame(rang_1A) %>%
+#   select(id_etudiant, rang_1A) %>%
+#   distinct(id_etudiant, .keep_all = TRUE)
+# 
+# rang_2A_clean <- as.data.frame(rang_1A) %>%
+#   select(id_etudiant, rang_2A) %>%
+#   distinct(id_etudiant, .keep_all = TRUE)
+# 
+# rang_3A_clean <- as.data.frame(rang_1A)rang_3A %>%
+#   select(id_etudiant, rang_3A) %>%
+#   distinct(id_etudiant, .keep_all = TRUE)
+# 
+# bdd_unique <- bdd_unique %>%
+#   left_join(rang_1A_clean, by = "id_etudiant") %>%
+#   left_join(rang_2A_clean, by = "id_etudiant") %>%
+#   left_join(rang_3A_clean, by = "id_etudiant") %>%
+#   mutate(
+#     profil_1A = case_when(
+#       is.na(rang_1A) ~ NA_character_,
+#       rang_1A <= 25 ~ "Très bon",
+#       rang_1A <= 50 ~ "Bon",
+#       rang_1A <= 75 ~ "Moyen",
+#       TRUE ~ "Moins bon"
+#     ),
+#     profil_2A = case_when(
+#       is.na(rang_2A) ~ NA_character_,
+#       rang_2A <= 25 ~ "Très bon",
+#       rang_2A <= 50 ~ "Bon",
+#       rang_2A <= 75 ~ "Moyen",
+#       TRUE ~ "Moins bon"
+#     ),
+#     profil_3A = case_when(
+#       is.na(rang_3A) ~ NA_character_,
+#       rang_3A <= 25 ~ "Très bon",
+#       rang_3A <= 50 ~ "Bon",
+#       rang_3A <= 75 ~ "Moyen",
+#       TRUE ~ "Moins bon"
+#     )
+#   )
 # travaux sur 3A
-bdd_3A <- bdd[bdd$annee_ecole=="3A" & !is.na(bdd$filiere_3A),]
-
-#  conserver une ligne par eleve et par année
-bdd_3A <- bdd_3A[!duplicated(cbind(bdd_3A$id_etudiant,bdd_3A$annee)),]
-
-# recoder filiere 3A pour pb sur autres et pb sur nom filiere (regroupement)
-bdd_3A$fil_3A <- bdd_3A$filiere_3A
+# bdd_3A <- bdd[bdd$annee_ecole=="3A" & !is.na(bdd$filiere_3A),]
+# 
+# #  conserver une ligne par eleve et par année
+# bdd_3A <- bdd_3A[!duplicated(cbind(bdd_3A$id_etudiant,bdd_3A$annee)),]
+# 
+# # recoder filiere 3A pour pb sur autres et pb sur nom filiere (regroupement)
+# bdd_3A$fil_3A <- bdd_3A$filiere_3A
 # bdd_3A$fil_3A <- ifelse(bdd_3A$filiere_3A == "Autres" & bdd_3A$voie_lib %in% c("3A,3A GDRIF","3A,3A GDRIF,OFPR","3A,3A GR", "3A,3A GR,3A Ing,OFPR,T00000","3A,3A GR,3A Ing,T00000","3A,3A GR,3A Ing,T01850","3A,3A GR,3A Ing,T02650","3A,3A GR,CVEC","3A,3A GR,CVEC,OFPR","3A,3A GR,CVEC,OFPR,Tpoursuite","3A,3A GR,CVEC,Tpoursuite","3A,3A GR,OFPR"),"GDR",
 #                         ifelse(bdd_3A$filiere_3A == "Autres" & bdd_3A$voie_lib %in% c("3A,3A Ing,3A SBio,OFPR,T00000","3A,3A Ing,3A SBio,OFPR,T01850","3A,3A Ing,3A SBio,T00000","3A,3A Ing,3A SBio,T01850","3A,3A SBio","3A,3A SBio,CVEC","3A,3A SBio,CVEC,OFPR","3A,3A SBio,CVEC,OFPR,Tpoursuite","3A,3A SBio,CVEC,Tpoursuite","3A,3A SBio,OFPR","3A,3A SBio,OFPR,Tpoursuite","3A,3A SBio,T00000"),"SBio",
 #                                ifelse(bdd_3A$filiere_3A == "M","MKT",
 #                                       ifelse(bdd_3A$filiere_3A == "SV","SBIO",ifelse(bdd_3A$filiere_3A == "ISTS","MES",bdd_3A$filiere_3A)))))
-
-```
-
-
-# 0. Test des scores IDIT
-```{r}
-bdd_1A_2A_unique_2 <- bdd_1A_2A_unique %>%
-  mutate(
-    quartile_score = ntile(Score_IDIT, 4),
-    quartile_label = case_when(
-      quartile_score == 1 ~ "Q1 (0-25%)",
-      quartile_score == 2 ~ "Q2 (25-50%)",
-      quartile_score == 3 ~ "Q3 (50-75%)",
-      quartile_score == 4 ~ "Q4 (75-100%)"
-    )
-  )
-```
-
-```{r}
-bdd_1A_2A_unique_concours <- bdd_1A_2A_unique %>%
-  filter(spe_entree %in% c("MPI","D2","BL","MP","PC/PSI")) %>% 
-  group_by(spe_entree) %>%
-  summarise(
-    n = n(),
-    Score_IDIT_moyen = mean(Score_IDIT, na.rm = TRUE),
-    Score_IDIT_mediane = median(Score_IDIT, na.rm = TRUE),
-    ecart_type = sd(Score_IDIT, na.rm = TRUE)
-  ) %>%
-  arrange(desc(Score_IDIT_moyen))
-```
-
-```{r}
-bdd_1A_2A_unique_concours <- bdd_1A_2A_unique %>% 
-  filter(spe_entree %in% c("MPI","MP","PC/PSI","BL","D2"))
-
-ggplot(bdd_1A_2A_unique_concours, aes(x = spe_entree, y = Score_IDIT, fill = spe_entree)) +
-  geom_boxplot(alpha = 0.7) +
-  labs(
-    title = "Comparaison du Score IDIT par filière d'entrée",
-    x = "Filière",
-    y = "Score IDIT (0-100)"
-  ) +
-  theme_minimal()
-```
-```{r}
-aov(Score_IDIT ~ spe_entree, data = bdd_1A_2A_unique_2) %>% summary()
-```
-# 3.3. Rang d'intégration et rang à l'école
-
-```{r}
-bdd_1A_2A_unique_rang <- bdd_1A_2A_unique_concours %>% 
-  group_by(annee,annee_ecole) %>% 
-  mutate(
-    rang = rank(-moyenne_generale, ties.method = "min"),  # - pour un classement décroissant
-    # Création des variables spécifiques
-    rang1A = ifelse(annee_ecole == "1A", rang, NA_real_),
-    rang2A = ifelse(annee_ecole == "2A", rang, NA_real_)
-  ) %>%
-  ungroup() %>%
-  select(-rang)  # On supprime la colonne temporaire 'rang'
-
-```
-
-```{r}
-
-reg <- lm(bdd_1A_2A_unique_rang$rang1A ~ bdd_1A_2A_unique_rang$Score_IDIT)
-
-summary(reg)
-
-plot(bdd_1A_2A_unique_rang$Score_IDIT, bdd_1A_2A_unique_rang$rang1A,
-     xlab = "Score_IDIT", ylab = "Rang 1A", main = "Une relation réussite 1A / rang d'admission ?")
-
-abline(lm(bdd_1A_2A_unique_rang$moyenne_generale ~ bdd_1A_2A_unique_rang$Score_IDIT), col = "red")
-
-
-```
-```{r}
-bdd_1A_2A_unique_rang_MP <- bdd_1A_2A_unique_rang %>% filter(spe_entree == "MP")
-
-reg <- lm(bdd_1A_2A_unique_rang_MP$rang1A ~ bdd_1A_2A_unique_rang_MP$rang_cc_maths)
-
-summary(reg)
-
-plot(bdd_1A_2A_unique_rang$Score_IDIT, bdd_1A_2A_unique_rang$rang1A,
-     xlab = "Score_IDIT", ylab = "Rang 1A", main = "Une relation réussite 1A / rang d'admission ?")
-
-
 
 ```
 
@@ -500,7 +535,7 @@ ggplot(data_plot, aes(
 
 ```
 
-### PAr voie
+### Par voie
 
 #### Par statut
 
@@ -1464,8 +1499,6 @@ bdd_bloc_1A_2A %>%
 
 Le seuil pour les élèves en difficulté a été fixé à une moyenne inférieure à 12.
 
-### 2.2.1. En première année
-
 - Moyenne générale
 
 ```{r}
@@ -1738,13 +1771,11 @@ bdd_plot %>%
                 full_width = FALSE, position = "center")
 
 ```
-
-
 ```{r}
 
 ggplot(bdd_plot, aes(x = bloc_an, y = rang_moy_math,
-                        color = statut_etudiant, group = statut_etudiant)) +
-  geom_line(size = 1) +
+                     color = statut_etudiant, group = statut_etudiant)) +
+  geom_line(linewidth = 1) +  # Remplace size par linewidth
   geom_point(size = 2) +
   labs(
     title = "Rang moyen (%) au concours maths par statut étudiant",
@@ -1752,7 +1783,7 @@ ggplot(bdd_plot, aes(x = bloc_an, y = rang_moy_math,
     y = "Rang moyen (%)",
     color = "Statut étudiant"
   ) +
-  theme_minimal(base_size = 14) +
+  theme_minimal(base_size = 12) +
   theme(
     plot.title = element_text(face = "bold"),
     legend.position = "bottom"
@@ -1784,7 +1815,7 @@ ggplot(bdd_box,
     color = "Statut étudiant"
   ) +
   scale_y_continuous(limits = c(0, 100)) +
-  theme_minimal(base_size = 14) +
+  theme_minimal(base_size = 12) +
   theme(
     plot.title = element_text(face = "bold"),
     legend.position = "bottom"
@@ -1794,7 +1825,7 @@ ggplot(bdd_box,
 ```
 
 
-### Zoom sur les PC/PSI
+#### 2.1.1. Zoom sur les PC/PSI
 
 ```{r}
 
@@ -1821,7 +1852,6 @@ bdd_plot %>%
                 full_width = FALSE, position = "center")
 
 ```
-
 
 ```{r}
 
@@ -2086,7 +2116,7 @@ ggplot(bdd_box,
 ```{r}
 
 bdd %>%
-  filter(!is.na(ccc_ran_com)) %>% 
+  filter(!is.na(ccc_ran_com_standard)) %>% 
   group_by(bloc_an,redoublement) %>%
   summarise(
     n = n(),
@@ -2249,6 +2279,791 @@ roc_obj <- roc(bdd_math$redoublement, pred)
 auc(roc_obj)   # entre 0.5 (hasard) et 1 (parfait)
 ```
 
+## 3.3. Rang d'intégration et réussite
+
+### 3.3.1. Comparaison de rang moyen standardisé par spécialité à l'entrée
+
+```{r}
+bdd_unique %>%
+  filter(spe_entree %in% c("MPI","D2","BL","MP","PC/PSI")) %>% 
+  group_by(spe_entree) %>%
+  summarise(
+    n = n(),
+    rang_cc_moyen = mean(rang_cc, na.rm = TRUE),
+    rang_cc_mediane = median(rang_cc, na.rm = TRUE),
+    ecart_type = sd(rang_cc, na.rm = TRUE)
+  ) %>%
+  arrange(desc(rang_cc_moyen))
+
+ggplot(bdd_unique, aes(x = spe_entree, y = rang_cc, fill = spe_entree)) +
+  geom_boxplot(alpha = 0.7) +
+  labs(
+    title = "Comparaison du rang harmonisé par filière d'entrée",
+    x = "Filière",
+    y = "Score IDIT (0-100)"
+  ) +
+  theme_minimal()
+
+```
+
+### 3.3.2. Trajectoires de réussite
+
+#### 3.3.2.1. Réussite en 1A en fonction du rang au concours
+
+##### 3.3.2.1.1. Pas de lien linéaire, pas de lien monotone
+
+Malgré des tentatives d'individualiser la note en évacuant les notes de projet, de regarder sur le passé récent (réforme CCINP) et uniquement sur les MP et leur réussite aux matières "matheuses", il est impossible de dégager un lien linéaire net (les R2 des régressions sont de 0,05 sur l'ensemble de la préiode et 0,09 sur la période récente) et encore moins une relation monotone (le rho de Spearman vaut -0,28, i.e. 4 % de l’association monotone est liée à la relation).
+
+La fiabilité des modèles de régression est très faible, pour autant, quel que soit les périodes, le lien est toujours significatif avec une pente très faible de l'ordre de 0,03 entre le rang en première année (ou la moyenne générale) et le rang d'admission au concours (MP, PC, PSI, BL, D2).
+
+En revanche, le lien entre la réussite en 2A et la réussite en 1A est très net (R2 > 0,5).
+
+Parmi les hypothèses qui pourraient expliquer l'absence de lien entre la réussite à l'ENSAI et le rang au concours :
+- L'essentiel des promotions étant constitués de MP classés via un concours commun (CCINP), l'écart entre le meilleur admis et le moins bon admis n'est peut-être pas énorme...
+- ...Et peut-être que cet écart ne se fait pas sur des matières qui procurent un avantage comparatif à l'ENSAI (les différences peuvent se faire sur des matières comme la culture générale, la physique, etc.)
+-> Ces éléments militent pour disposer des notes aux différentes épreuves des concours si on veut affiner l'analyse
+- Une autre hypothèse qui n'exclue pas les deux premières est celle d'un relâchement post classe préparatoire pour certains étudiants, et inversement de comportements plus studieux pour les élèves issues d'autres voies (BUT/Interne par exemple)
+-> Cela militerait pour un discours adapté à l'entrée pour prendre en compte cette dimension et limiter les comportements de "touristes"
+
+On s'intéressera aux profils de ces élèves pour comprendre un peu mieux la trajectoire depuis la réussite au concours jusqu'à l'obtention du master et de sa spécialité.
+
+```{r}
+bdd_unique_1A <- bdd_unique %>% filter(annee_ecole == "1A")
+
+ggplot(bdd_unique_1A, aes(x = rang_cc, y = rang_1A)) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    x = "Rang concours",
+    y = "Rang 1A",
+    title = "Relation entre réussite en 1A et rang d'admission"
+  ) +
+  theme_minimal()
+```
+
+```{r}
+bdd_unique_1A <- bdd_unique %>% filter(annee_ecole == "1A")
+
+ggplot(bdd_unique_1A, aes(x = rang_cc, y = rang_hors_projet_1A)) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    x = "Rang concours",
+    y = "Rang 1A",
+    title = "Relation entre réussite en 1A et rang d'admission"
+  ) +
+  theme_minimal()
+```
+
+
+```{r}
+ggplot(bdd_unique_1A, aes(x = rang_cc, y = rang_1A)) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(~ bloc_an) +
+  labs(
+    x = "Rang concours",
+    y = "Rang 1A",
+    title = "Relation entre réussite en 1A et rang d'admission"
+  ) +
+  theme_minimal()
+```
+
+La régression confirme l'impression visuelle, la qualité d'ajustement est extrêmement faible (0.07) et la pente de 0,03 est très faible et probablement un artefecat de situation confirmantes et infirmantes.
+
+```{r}
+reg <- lm(bdd_unique_1A$moyenne_generale ~ bdd_unique_1A$rang_cc)
+summary(reg)
+
+```
+```{r}
+reg <- lm(bdd_unique_1A$rang_hors_projet_1A ~ bdd_unique_1A$rang_cc)
+summary(reg)
+
+```
+On peut retenir qu’environ 4 % de l’association monotone est liée à cette relation — avec prudence, car ρ2  n’est pas exactement un R2  de régression classique.
+
+```{r}
+cor.test(
+  bdd_unique_1A$rang_cc,
+  bdd_unique_1A$moyenne_generale,
+  method = "spearman",
+  exact = FALSE
+)
+```
+
+Cela s'améliore légèrement sur la période récente mais le R2 reste beaucoup trop faible pour affirmer un lien entre le rang à l'entrée et la réussite à l'ensai.
+
+```{r}
+bdd_unique_2023_2025 <- bdd_unique_1A %>% filter(bloc_an=="2023-2025")
+reg <- lm(bdd_unique_2023_2025$moyenne_generale ~ bdd_unique_2023_2025$rang_cc)
+summary(reg)
+```
+
+##### 3.3.2.1.2. Peut-être des effets de seuil/groupe ? (Anova)
+
+```{r}
+
+library(rstatix)  # Pour les tests post-hoc et les visualisations
+
+# Supprimer les NA et convertir en facteur ordonné
+bdd_unique_anova <- bdd_unique %>%
+  filter(!is.na(profil_1A), !is.na(profil_2A), !is.na(profil_3A), !is.na(profil_cc)) %>%
+  mutate(
+    profil_cc = factor(profil_cc, levels = c("Très bon", "Bon", "Moyen", "Moins bon"), ordered = TRUE),
+    profil_1A = factor(profil_1A, levels = c("Très bon", "Bon", "Moyen", "Moins bon"), ordered = TRUE),
+    profil_2A = factor(profil_2A, levels = c("Très bon", "Bon", "Moyen", "Moins bon"), ordered = TRUE),
+    profil_3A = factor(profil_3A, levels = c("Très bon", "Bon", "Moyen", "Moins bon"), ordered = TRUE)
+  )
+
+```
+
+```{r}
+# ANOVA simple (sans interaction)
+model_1A <- aov(rang_cc ~ profil_1A, data = bdd_unique_anova)
+summary(model_1A)
+eta_squared <- 17755 / (17755 + 653413)
+```
+L'hypothèse nulle ("tous les profil_1A ont le même rang moyen au concours est rejetée), la probabilité d'observer une telle différence par hasard est de 0,003%.
+
+En revanche, η² = 0.027 : 2,7% de la variance du rang_cc est expliquée par le profil_1A. → Effet faible à modéré (proche de 0 = effet minimal, proche de 1 = effet maximal).
+
+```{r}
+bdd_unique_anova$profil_1A <- factor(
+  bdd_unique_anova$profil_1A,
+  levels = c("Moins bon", "Moyen", "Bon", "Très bon"),
+  ordered = TRUE
+)
+
+ggplot(bdd_unique_anova, aes(x = profil_1A, y = rang_cc, fill = profil_1A)) +
+  geom_boxplot() +
+  labs(
+    title = "Rang au concours (rang_cc) par profil en 1A (profil_1A)",
+    x = "Profil en 1A",
+    y = "Rang au concours"
+  ) +
+  theme_minimal()
+```
+
+L'ANOVA nous permet : 
+- d'identifier une plus grande disparité dans le groupe des moins bons
+- de visualiser "un effet de courbe en cloche"
+
+Vérification des hypothèses
+
+```{r}
+shapiro.test(residuals(model_1A))
+```
+Les résidus suivent une distribution normale.
+
+Homgénéité des variances
+
+```{r}
+library(car)
+leveneTest(rang_cc ~ profil_1A, data = bdd_unique_anova)
+
+```
+Le test de Levene vérifie l'homogénéité des variances entre les groupes (ici, les 4 profils : "Très bon", "Bon", "Moyen", "Moins bon").
+
+Hypothèse nulle (H₀) : Les variances des groupes sont égales.
+p-value = 0.029 : → H₀ est rejetée au seuil de 5% (car 0.029 < 0.05). Les variances ne sont pas homogènes entre les profils.Donc même l'anova est peu valide statistiquement.
+
+##### 3.3.2.1.3. Vers une typologie de comportements/trajectoires (CAH)
+
+```{r}
+# Variables à utiliser pour construire les profils
+vars_clustering <- c(
+  #"spe_entree",
+  #"rang_cc",
+  "rang_1A",
+  "rang_2A",
+  "evol_1A_2A",
+  "profil_1A",
+  "profil_2A",
+  #"profil_3A"
+  "note_stat_1A",
+  "note_info_1A",
+  "note_eco_1A",
+  "note_hum_1A",
+  "note_stat_2A",
+  "note_info_2A",
+  "note_eco_2A",
+  "note_hum_2A",
+  "evol_info_1A_2A",
+  "evol_stat_1A_2A",
+  "evol_eco_1A_2A",
+  "evol_hum_1A_2A"
+)
+
+data_cah <- bdd_unique %>%
+  select(id_etudiant, all_of(vars_clustering)) %>%
+  mutate(
+    across(where(is.numeric), ~ ifelse(is.nan(.x), NA, .x))
+  ) %>%
+  drop_na() %>%
+  distinct(id_etudiant, .keep_all = TRUE)
+
+```
+
+```{r}
+res_afdm <- FAMD(
+  data_cah %>% select(all_of(vars_clustering)),
+  ncp = 8,
+  graph = FALSE
+)
+```
+
+```{r}
+fviz_screeplot(res_afdm, addlabels = TRUE)
+
+```
+
+```{r}
+res_cah <- HCPC(
+  res_afdm,
+  nb.clust = 4,
+  consol = TRUE,
+  graph = TRUE 
+)
+```
+```{r}
+fviz_cluster(
+  res_cah,
+  repel = TRUE,
+  geom = "point"
+)
+```
+
+```{r}
+data_cah <- data_cah %>%
+  mutate(
+    cluster = factor(res_cah$data.clust$clust) 
+  ) %>% 
+  select(id_etudiant,cluster) %>% 
+  unique()
+
+bdd_unique_cluster <- bdd_unique %>% 
+  left_join(data_cah, by ="id_etudiant") %>% 
+  filter(!is.na(cluster))
+
+stats_cluster <- bdd_unique_cluster %>%
+  group_by(cluster) %>%
+  summarise(
+    prop = paste0(round(n() / nrow(bdd_unique_cluster) * 100, 1), "%"),
+    # rang_cc = round(mean(rang_cc, na.rm = TRUE), 1),
+    rang_1A = round(mean(rang_1A, na.rm = TRUE), 1),
+    rang_2A = round(mean(rang_2A, na.rm = TRUE), 1),
+    niv_stat = round(mean((note_stat_1A + note_stat_2A) / 2, na.rm = TRUE), 1),
+    niv_info = round(mean((note_info_1A + note_info_2A) / 2, na.rm = TRUE), 1),
+    niv_eco = round(mean((note_eco_1A + note_eco_2A) / 2, na.rm = TRUE), 1),
+    niv_hum = round(mean((note_hum_1A + note_hum_2A) / 2, na.rm = TRUE), 1),
+    progr_1A_2A = round(mean(evol_1A_2A, na.rm = TRUE), 1)
+  ) %>%
+  mutate(
+    Profil_Type = case_when(
+      cluster == 1 ~ "Les élèves en difficulté",
+      cluster == 2 ~ "Les touristes en régression",
+      cluster == 3 ~ "Les travailleurs en progression",
+      cluster == 4 ~ "L'élite tranquille",
+      TRUE ~ paste("Cluster", cluster)
+    )
+  ) %>%
+  select(-cluster) %>%
+  select(Profil_Type, everything())
+
+kable(
+  stats_cluster,
+  format = "html",
+  caption = "Analyse des clusters d'élèves",
+  escape = TRUE
+) %>%
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed", "responsive"),
+    full_width = FALSE
+  ) %>%
+  column_spec(1, bold = TRUE, extra_css = "width: 30%;") %>%
+  column_spec(2:9, width = "10%") %>%
+  add_header_above(c("Profil" = 1, "Statistiques" = 8)) %>%  # Modifié de 9 à 8
+  footnote(
+    general = "Moyennes 1A et 2A",
+    general_title = "Notes : ",
+    footnote_as_chunk = TRUE
+  )
+
+  
+```
+
+```{r}
+bdd_unique_cluster<- bdd_unique_cluster %>% 
+  filter(!is.na(filiere_1A),
+         !spe_entree %in% c("AST-1A","ERASMUS"))
+
+
+ggplot(bdd_unique_cluster, aes(x = spe_entree, fill = cluster)) +
+  geom_bar(position = "fill") +
+  scale_y_continuous(labels = scales::percent) +
+  scale_fill_manual(
+    values = c(
+      "4" = "#0D233A",
+      "3" = "#2B5480",
+      "2" = "#4A7BB0",
+      "1" = "#78A5D3"
+    ),
+    labels = c(
+      cluster == 1 ~ "Les élèves en difficulté",
+      cluster == 2 ~ "Les touristes en régression",
+      cluster == 3 ~ "Les travailleurs en progression",
+      cluster == 4 ~ "L'élite tranquille",
+      TRUE ~ paste("Cluster", cluster)
+    )
+  ) +
+  labs(
+    title = "Répartition des profils académiques",
+    subtitle = "En fonction de la voie d'admission",
+    x = "Voie d'admission",
+    y = "prop",
+    fill = "Profil Type",
+    caption = "Données : Pamplemousse 2026"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 30, hjust = 1),
+    plot.title = element_text(face = "bold", color = "#1B365D", size = 13),
+    plot.caption = element_text(hjust = 0, face = "italic", color = "#555555", size = 8),
+    legend.position = "right",
+    legend.title = element_text(face = "bold", color = "#1B365D")
+  )
+```
+```{r}
+bdd_unique_cluster_sans_na_ing <- bdd_unique_cluster %>% 
+  filter(!is.na(filiere_3A),
+         filiere_3A != "Autres",
+         !filiere_3A %in% c("MSP","ES","STD","EMOS"))
+
+bdd_unique_cluster_sans_na_att <- bdd_unique_cluster %>% 
+  filter(!is.na(filiere_3A),
+         filiere_3A != "Autres",
+         filiere_3A %in% c("MSP","ES","STD","EMOS"))
+
+```
+
+```{r}
+ggplot(bdd_unique_cluster_sans_na_ing, aes(x = filiere_3A, fill = cluster)) +
+  geom_bar(position = "fill") +
+  scale_y_continuous(labels = scales::percent) +
+  scale_fill_manual(
+    values = c(
+      "4" = "#0D233A",
+      "3" = "#2B5480",
+      "2" = "#4A7BB0",
+      "1" = "#78A5D3"
+    ),
+    labels = c(
+      cluster == 1 ~ "Les élèves en difficulté",
+      cluster == 2 ~ "Les touristes en régression",
+      cluster == 3 ~ "Les travailleurs en progression",
+      cluster == 4 ~ "L'élite tranquille",
+      TRUE ~ paste("Cluster", cluster)
+    )
+  ) +
+  labs(
+    title = "Répartition des trajectoires de spécialisation des élèves ingénieurs",
+    subtitle = "En fonction du niveau en 1A et 2A",
+    x = "Spécialisation",
+    y = "prop",
+    fill = "Profil Type",
+    caption = "Données : Pamplemousse 2026"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 30, hjust = 1),
+    plot.title = element_text(face = "bold", color = "#1B365D", size = 13),
+    plot.caption = element_text(hjust = 0, face = "italic", color = "#555555", size = 8),
+    legend.position = "right",
+    legend.title = element_text(face = "bold", color = "#1B365D")
+  )
+
+```
+```{r}
+ggplot(bdd_unique_cluster_sans_na_att, aes(x = filiere_3A, fill = cluster)) +
+  geom_bar(position = "fill") +
+  scale_y_continuous(labels = scales::percent) +
+  scale_fill_manual(
+    values = c(
+      "4" = "#0D233A",
+      "3" = "#2B5480",
+      "2" = "#4A7BB0",
+      "1" = "#78A5D3"
+    ),
+    labels = c(
+      cluster == 1 ~ "Les élèves en difficulté",
+      cluster == 2 ~ "Les touristes en régression",
+      cluster == 3 ~ "Les travailleurs en progression",
+      cluster == 4 ~ "L'élite tranquille",
+      TRUE ~ paste("Cluster", cluster)
+    )
+  ) +
+  labs(
+    title = "Répartition des trajectoires de spécialisation des élèves ingénieurs",
+    subtitle = "En fonction du niveau en 1A et 2A",
+    x = "Spécialisation",
+    y = "prop",
+    fill = "Profil Type",
+    caption = "Données : Pamplemousse 2026"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 30, hjust = 1),
+    plot.title = element_text(face = "bold", color = "#1B365D", size = 13),
+    plot.caption = element_text(hjust = 0, face = "italic", color = "#555555", size = 8),
+    legend.position = "right",
+    legend.title = element_text(face = "bold", color = "#1B365D")
+  )
+
+```
+
+```{r}
+data_sankey <- bdd_unique_cluster_sans_na_att %>%
+  filter(!is.na(spe_entree) & !is.na(cluster) & !is.na(filiere_3A)) %>%
+  count(spe_entree, cluster, filiere_3A, name = "effectif")
+
+data_agg <- data_sankey %>%
+  group_by(spe_entree, filiere_3A) %>%
+  summarise(effectif = sum(effectif), .groups = "drop") %>%
+  filter(effectif > 0)  # Filtrer les effectifs nuls
+
+ggplot(data_agg,
+       aes(axis1 = spe_entree,
+           axis3 = filiere_3A,
+           y = effectif)) +
+  geom_alluvium(aes(fill = filiere_3A),  # <-- Couleur par filière
+                width = 1/5,
+                alpha = 0.7,
+                color = "white",
+                size = 0.2) +
+  geom_stratum(width = 1/5,
+               fill = "white",
+               color = "black") +
+  geom_text(stat = "stratum",
+            aes(label = after_stat(stratum)),
+            color = "#1B365D",
+            size = 2.8,
+            check_overlap = TRUE) +
+
+  # Palette de couleurs par filière (exemple avec 6 filières)
+  scale_fill_brewer(palette = "Set2",  # Palette qualitative (distincte pour chaque filière)
+                    name = "Filière 3A") +
+
+  scale_x_discrete(limits = c("Voie d'admission", "Filière 3A"),
+                   expand = c(.05, .05)) +
+
+  labs(
+    title = "Trajectoire globale des élèves ingénieurs : de l'admission en 1A à la 3A",
+    y = "Effectif cumulé"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.y = element_blank(),
+    panel.grid = element_blank()
+  )
+```
+
+```{r}
+data_sankey <- bdd_unique_cluster_sans_na_att %>%
+  filter(!is.na(spe_entree) & !is.na(cluster) & !is.na(filiere_3A)) %>%
+  count(spe_entree, cluster, filiere_3A, name = "effectif")
+
+data_agg <- data_sankey %>%
+  group_by(spe_entree, cluster) %>%
+  summarise(effectif = sum(effectif), .groups = "drop") %>%
+  filter(effectif > 0)  # Filtrer les effectifs nuls
+
+ggplot(data_agg,
+       aes(axis1 = spe_entree,
+           axis3 = cluster,
+           y = effectif)) +
+  geom_alluvium(aes(fill = cluster),  # <-- Couleur par filière
+                width = 1/5,
+                alpha = 0.7,
+                color = "white",
+                size = 0.2) +
+  geom_stratum(width = 1/5,
+               fill = "white",
+               color = "black") +
+  geom_text(stat = "stratum",
+            aes(label = after_stat(stratum)),
+            color = "#1B365D",
+            size = 2.8,
+            check_overlap = TRUE) +
+
+  # Palette de couleurs par filière (exemple avec 6 filières)
+  scale_fill_brewer(palette = "Set2",  # Palette qualitative (distincte pour chaque filière)
+                    name = "Filière 3A") +
+
+  scale_x_discrete(limits = c("Voie d'admission", "Filière 3A"),
+                   expand = c(.05, .05)) +
+
+  labs(
+    title = "Voie d'admisssion et réussite à l'école",
+    y = "Effectif cumulé"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.y = element_blank(),
+    panel.grid = element_blank()
+  )
+```
+
+```{r}
+data_sankey <- bdd_unique_cluster_sans_na_ing %>%
+  filter(!is.na(spe_entree) & !is.na(cluster) & !is.na(filiere_3A)) %>%
+  count(spe_entree, cluster, filiere_3A, name = "effectif")
+
+data_agg <- data_sankey %>%
+  group_by(spe_entree, filiere_3A) %>%
+  summarise(effectif = sum(effectif), .groups = "drop") %>%
+  filter(effectif > 0)  # Filtrer les effectifs nuls
+
+ggplot(data_agg,
+       aes(axis1 = spe_entree,
+           axis3 = filiere_3A,
+           y = effectif)) +
+  geom_alluvium(aes(fill = filiere_3A),  # <-- Couleur par filière
+                width = 1/5,
+                alpha = 0.7,
+                color = "white",
+                size = 0.2) +
+  geom_stratum(width = 1/5,
+               fill = "white",
+               color = "black") +
+  geom_text(stat = "stratum",
+            aes(label = after_stat(stratum)),
+            color = "#1B365D",
+            size = 2.8,
+            check_overlap = TRUE) +
+
+  # Palette de couleurs par filière (exemple avec 6 filières)
+  scale_fill_brewer(palette = "Set2",  # Palette qualitative (distincte pour chaque filière)
+                    name = "Filière 3A") +
+
+  scale_x_discrete(limits = c("Voie d'admission", "Filière 3A"),
+                   expand = c(.05, .05)) +
+
+  labs(
+    title = "Trajectoire globale des élèves ingénieurs : de l'admission en 1A à la 3A",
+    y = "Effectif cumulé"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.y = element_blank(),
+    panel.grid = element_blank()
+  )
+```
+
+```{r}
+data_sankey <- bdd_unique_cluster_sans_na_ing %>%
+  filter(!is.na(spe_entree) & !is.na(cluster) & !is.na(filiere_3A)) %>%
+  count(spe_entree, cluster, filiere_3A, name = "effectif")
+
+data_agg <- data_sankey %>%
+  group_by(spe_entree, cluster) %>%
+  summarise(effectif = sum(effectif), .groups = "drop") %>%
+  filter(effectif > 0)  # Filtrer les effectifs nuls
+
+ggplot(data_agg,
+       aes(axis1 = spe_entree,
+           axis3 = cluster,
+           y = effectif)) +
+  geom_alluvium(aes(fill = cluster),  # <-- Couleur par filière
+                width = 1/5,
+                alpha = 0.7,
+                color = "white",
+                size = 0.2) +
+  geom_stratum(width = 1/5,
+               fill = "white",
+               color = "black") +
+  geom_text(stat = "stratum",
+            aes(label = after_stat(stratum)),
+            color = "#1B365D",
+            size = 2.8,
+            check_overlap = TRUE) +
+
+  # Palette de couleurs par filière (exemple avec 6 filières)
+  scale_fill_brewer(palette = "Set2",  # Palette qualitative (distincte pour chaque filière)
+                    name = "Filière 3A") +
+
+  scale_x_discrete(limits = c("Voie d'admission", "Filière 3A"),
+                   expand = c(.05, .05)) +
+
+  labs(
+    title = "Voie d'admisssion et réussite à l'école",
+    y = "Effectif cumulé"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.y = element_blank(),
+    panel.grid = element_blank()
+  )
+```
+
+
+#### 3.3.2.2. Réussite en 2A en fonction de la réussite en 1A
+
+Là déjà ça va beaucoup mieux
+
+```{r}
+ggplot(bdd_unique, aes(x = rang_2A, y = rang_1A)) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    x = "Rang concours",
+    y = "Rang 1A",
+    title = "Relation entre réussite en 1A et rang d'admission"
+  ) +
+  theme_minimal()
+```
+```{r}
+ggplot(bdd_unique, aes(x = rang_2A, y = rang_1A)) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(~ bloc_an) +
+  labs(
+    x = "Rang concours",
+    y = "Rang 1A",
+    title = "Relation entre réussite en 2A et réussite en"
+  ) +
+  theme_minimal()
+```
+
+
+
+```{r}
+reg <- lm(bdd_unique$rang_2A ~ bdd_unique$rang_1A)
+summary(reg)
+```
+```{r}
+bdd_unique_2023_2025 <- bdd_unique %>% filter(bloc_an=="2023-2025")
+reg <- lm(bdd_unique_2023_2025$rang_2A ~ bdd_unique_2023_2025$rang_1A)
+summary(reg)
+```
+```{r}
+donnees_graphique <- donnees_graphique %>%
+  mutate(
+    spe_entree = factor(spe_entree),
+    x_base = as.numeric(spe_entree),
+    decalage = case_when(
+      classement == "Rang concours" ~ -0.18,
+      classement == "Rang 1A"       ~ -0.06,
+      classement == "Rang 2A"       ~  0.06,
+      classement == "Rang 3A"       ~  0.18
+    ),
+    x = x_base + decalage
+  )
+
+ggplot(
+  donnees_graphique,
+  aes(
+    x = x,
+    y = rang_moyen,
+    group = spe_entree,
+    color = classement
+  )
+) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 2.5) +
+  scale_x_continuous(
+    breaks = seq_along(levels(donnees_graphique$spe_entree)),
+    labels = levels(donnees_graphique$spe_entree)
+  ) +
+  scale_y_reverse() +
+  labs(
+    title = "Évolution des rangs moyens pour chaque filière",
+    x = "Filière d'entrée",
+    y = "Rang moyen",
+    color = "Classement"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+```
+
+
+#### 3.3.2.3. Réussite en 3A en fonction de la réussite en 2A
+
+Là il faudrait creuser par filière
+
+```{r}
+ggplot(bdd_unique, aes(x = rang_3A, y = rang_2A)) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    x = "Rang concours",
+    y = "Rang 1A",
+    title = "Relation entre réussite en 3A et réussite en 2A"
+  ) +
+  theme_minimal()
+```
+```{r}
+ggplot(bdd_unique, aes(x = rang_2A, y = rang_1A)) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(~ filiere_3A) +
+  labs(
+    x = "Rang concours",
+    y = "Rang 1A",
+    title = "Relation entre réussite en 3A et réussite en 23"
+  ) +
+  theme_minimal()
+```
+
+
+
+```{r}
+aov(rang_cc ~ spe_entree, data = bdd_unique) %>% summary()
+```
+
+```{r}
+bdd_1A_2A_unique_rang <- bdd_1A_2A_unique_concours %>% 
+  group_by(annee,annee_ecole) %>% 
+  mutate(
+    rang = rank(-moyenne_generale, ties.method = "min"),  # - pour un classement décroissant
+    # Création des variables spécifiques
+    rang1A = ifelse(annee_ecole == "1A", rang, NA_real_),
+    rang2A = ifelse(annee_ecole == "2A", rang, NA_real_)
+  ) %>%
+  ungroup() %>%
+  select(-rang)  # On supprime la colonne temporaire 'rang'
+
+```
+
+```{r}
+
+reg <- lm(bdd_1A_2A_unique_rang$rang1A ~ bdd_1A_2A_unique_rang$Score_IDIT)
+
+summary(reg)
+
+plot(bdd_1A_2A_unique_rang$Score_IDIT, bdd_1A_2A_unique_rang$rang1A,
+     xlab = "Score_IDIT", ylab = "Rang 1A", main = "Une relation réussite 1A / rang d'admission ?")
+
+abline(lm(bdd_1A_2A_unique_rang$moyenne_generale ~ bdd_1A_2A_unique_rang$Score_IDIT), col = "red")
+
+
+```
+
+```{r}
+bdd_1A_2A_unique_rang_MP <- bdd_1A_2A_unique_rang %>% filter(spe_entree == "MP")
+
+reg <- lm(bdd_1A_2A_unique_rang_MP$rang1A ~ bdd_1A_2A_unique_rang_MP$rang_cc_maths)
+
+summary(reg)
+
+plot(bdd_1A_2A_unique_rang$Score_IDIT, bdd_1A_2A_unique_rang$rang1A,
+     xlab = "Score_IDIT", ylab = "Rang 1A", main = "Une relation réussite 1A / rang d'admission ?")
+
+
+
+```
 
 
 
